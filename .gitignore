@@ -1,0 +1,21 @@
+# Byte-compiled / Python files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database 
+db.sqlite3
+db.sqlite3-journal
+
+# Environments 
+venv/
+env/
+.env
+
+# Media & Static 
+media/
+staticfiles/
+
+# OS files
+.DS_Store
+Thumbs.db
