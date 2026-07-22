@@ -16,3 +16,12 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'phone_number', 'role', 'address', 'is_verified']
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'role']
+
+class AdminLoginSerializer(serializers.Serializer):
+    username = serializers.CharField(required=True)
+    password = serializers.CharField(write_only=True)
