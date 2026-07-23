@@ -70,38 +70,29 @@ class VerifyOTPView(APIView):
         except User.DoesNotExist:
             return Response({"error": "User with this phone number not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        # Check if OTP matches
-        if user.otp != otp:
-            return Response({"error": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+        if user.otp != otp or user.is_otp_expired():
+            return Response({"error": "Invalid or expired OTP"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if OTP has expired
-        if user.is_otp_expired():
-            return Response({"error": "OTP has expired. Please request a new one"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Mark user as verified and clear OTP fields
         user.is_verified = True
         user.otp = None
         user.otp_created_at = None
         user.save()
 
-        # Generate JWT Tokens (Access & Refresh)
         refresh = RefreshToken.for_user(user)
-        
-        return Response({
+
+        response = Response({
             "message": "OTP verified successfully",
-            "user": UserSerializer(user).data,
-            "tokens": {
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-            }
+            "user": UserSerializer(user).data
         }, status=status.HTTP_200_OK)
-    
+
+        # Set HttpOnly Cookies
+        response.set_cookie(key='access_token', value=str(refresh.access_token), httponly=True, samesite='Lax', secure=False)
+        response.set_cookie(key='refresh_token', value=str(refresh), httponly=True, samesite='Lax', secure=False)
+
+        return response
+
 
 class AdminLoginView(APIView):
-    """
-    API endpoint for Admin login using Username and Password ONLY.
-    Returns JWT access & refresh tokens if credentials are valid and user is an admin.
-    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -112,36 +103,37 @@ class AdminLoginView(APIView):
         username = serializer.validated_data.get('username')
         password = serializer.validated_data.get('password')
 
-        # Find user ONLY by username
         user = User.objects.filter(username=username).first()
 
-        # Verify user exists and password is correct
         if user is None or not user.check_password(password):
-            return Response(
-                {"error": "Invalid username or password"}, 
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+            return Response({"error": "Invalid username or password"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Check if the user has admin role or is a superuser
         if user.role != 'admin' and not user.is_superuser:
-            return Response(
-                {"error": "Access denied. Only Admins can login here."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return Response({"error": "Access denied. Only Admins can login here."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Auto-update role to 'admin' if superuser created via terminal
         if user.is_superuser and user.role != 'admin':
             user.role = 'admin'
             user.save()
 
-        # Generate JWT Tokens
         refresh = RefreshToken.for_user(user)
 
-        return Response({
+        response = Response({
             "message": "Admin logged in successfully",
-            "user": AdminUserSerializer(user).data,
-            "tokens": {
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
-            }
+            "user": AdminUserSerializer(user).data
         }, status=status.HTTP_200_OK)
+
+        # Set HttpOnly Cookies
+        response.set_cookie(key='access_token', value=str(refresh.access_token), httponly=True, samesite='Lax', secure=False)
+        response.set_cookie(key='refresh_token', value=str(refresh), httponly=True, samesite='Lax', secure=False)
+
+        return response
+
+
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        response = Response({"message": "Logged out successfully"}, status=status.HTTP_200_OK)
+        response.delete_cookie('access_token')
+        response.delete_cookie('refresh_token')
+        return response

@@ -133,16 +133,17 @@ STATIC_URL = 'static/'
 
 
 
-# CORS Configuration (Allows frontend to connect)
-CORS_ALLOW_ALL_ORIGINS = True  # In production, specify actual frontend URLs
+# CORS Configuration (Allows frontend to connect with cookies)
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 
 # Custom User Model configuration
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
-# Django REST Framework & JWT Configuration
+# Django REST Framework & Strict Cookie JWT Configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'accounts.authentication.StrictCookieJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -165,3 +166,6 @@ SIMPLE_JWT = {
 import os
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
+APPEND_SLASH = False
