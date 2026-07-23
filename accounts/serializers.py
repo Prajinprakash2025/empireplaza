@@ -25,3 +25,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
 class AdminLoginSerializer(serializers.Serializer):
     username = serializers.CharField(required=True)
     password = serializers.CharField(write_only=True)
+
+class StaffLoginSerializer(serializers.Serializer):
+    username = serializers.CharField(required=True)
+    password = serializers.CharField(write_only=True)
