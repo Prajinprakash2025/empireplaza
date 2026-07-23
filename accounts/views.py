@@ -129,6 +129,56 @@ class AdminLoginView(APIView):
         return response
 
 
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
+from django.conf import settings
+
+class CookieTokenRefreshView(APIView):
+    """
+    Reads refresh_token from HttpOnly cookies, validates it, 
+    and sets a fresh access_token HttpOnly cookie.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        refresh_token = request.COOKIES.get('refresh_token')
+
+        if not refresh_token:
+            return Response({"error": "Refresh token missing"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            refresh = RefreshToken(refresh_token)
+            new_access_token = str(refresh.access_token)
+
+            response = Response({"message": "Token refreshed successfully"}, status=status.HTTP_200_OK)
+
+            # Set fresh access_token cookie
+            response.set_cookie(
+                key='access_token',
+                value=new_access_token,
+                httponly=True,
+                samesite='Lax',
+                secure=False
+            )
+
+            # Optional: Rotate refresh token if ROTATE_REFRESH_TOKENS is True
+            if getattr(settings, 'SIMPLE_JWT', {}).get('ROTATE_REFRESH_TOKENS', False):
+                refresh.set_jti()
+                refresh.set_exp()
+                response.set_cookie(
+                    key='refresh_token',
+                    value=str(refresh),
+                    httponly=True,
+                    samesite='Lax',
+                    secure=False
+                )
+
+            return response
+
+        except TokenError:
+            return Response({"error": "Invalid or expired refresh token. Please login again."}, status=status.HTTP_401_UNAUTHORIZED)
+
+
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 

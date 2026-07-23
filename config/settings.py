@@ -134,7 +134,11 @@ STATIC_URL = 'static/'
 
 
 # CORS Configuration (Allows frontend to connect with cookies)
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",      # Next.js local frontend
+    "http://127.0.0.1:3000",
+]
+
 CORS_ALLOW_CREDENTIALS = True
 
 # Custom User Model configuration
