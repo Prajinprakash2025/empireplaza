@@ -183,6 +183,7 @@ class LogoutView(APIView):
     """
     Allows anyone (even with expired tokens) to logout and clear cookies safely.
     """
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]  # Allowed for all to prevent 401 on expired tokens
 
     def post(self, request):
