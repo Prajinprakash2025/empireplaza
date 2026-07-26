@@ -6,7 +6,11 @@ from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import SendOTPSerializer, VerifyOTPSerializer, UserSerializer, AdminLoginSerializer, AdminUserSerializer
+from .serializers import SendOTPSerializer, VerifyOTPSerializer, UserSerializer, AdminUserSerializer
+from rest_framework import status, permissions, viewsets
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
+from django.conf import settings
 
 User = get_user_model()
 
@@ -92,24 +96,34 @@ class VerifyOTPView(APIView):
         return response
 
 
-class AdminLoginView(APIView):
+class StaffAndAdminLoginView(APIView):
+    """
+    Unified Login API for Admin (Username) and Kitchen Employees (Email).
+    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        serializer = AdminLoginSerializer(data=request.data)
+        serializer = StaffLoginSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        username = serializer.validated_data.get('username')
-        password = serializer.validated_data.get('password')
+        identifier = serializer.validated_data['identifier']
+        password = serializer.validated_data['password']
 
-        user = User.objects.filter(username=username).first()
+        # Search user by Username OR Email
+        user = User.objects.filter(
+            Q(username=identifier) | Q(email=identifier)
+        ).first()
 
         if user is None or not user.check_password(password):
-            return Response({"error": "Invalid username or password"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Invalid Username/Email or Password"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        if user.role != 'admin' and not user.is_superuser:
-            return Response({"error": "Access denied. Only Admins can login here."}, status=status.HTTP_403_FORBIDDEN)
+        # Restrict to Admin and Employee roles ONLY
+        if user.role not in ['admin', 'employee'] and not user.is_superuser:
+            return Response(
+                {"error": "Access denied. Only Admin and Kitchen Staff can login here."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         if user.is_superuser and user.role != 'admin':
             user.role = 'admin'
@@ -118,7 +132,7 @@ class AdminLoginView(APIView):
         refresh = RefreshToken.for_user(user)
 
         response = Response({
-            "message": "Admin logged in successfully",
+            "message": f"{user.role.capitalize()} logged in successfully",
             "user": AdminUserSerializer(user).data
         }, status=status.HTTP_200_OK)
 
@@ -129,9 +143,7 @@ class AdminLoginView(APIView):
         return response
 
 
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.exceptions import TokenError
-from django.conf import settings
+
 
 class CookieTokenRefreshView(APIView):
     """
@@ -194,50 +206,30 @@ class LogoutView(APIView):
     
 from .serializers import (
     SendOTPSerializer, VerifyOTPSerializer, 
-    UserSerializer, AdminUserSerializer, StaffLoginSerializer
+    UserSerializer, AdminUserSerializer, StaffLoginSerializer, StaffCreateSerializer, StaffUpdateSerializer
 )
+    
 
 
-class StaffAndAdminLoginView(APIView):
+class StaffManagementViewSet(viewsets.ModelViewSet):
     """
-    Unified Login API for both Admin and Kitchen Employees.
-    Allows only users with role 'admin' or 'employee' to log in.
+    Admin-Only ViewSet for managing Staff (Employee & Delivery Boy CRUD).
     """
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        serializer = StaffLoginSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        username = serializer.validated_data['username']
-        password = serializer.validated_data['password']
-
-        user = User.objects.filter(username=username).first()
-
-        if user is None or not user.check_password(password):
-            return Response({"error": "Invalid username or password"}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Allow ONLY Admin and Employee roles
-        if user.role not in ['admin', 'employee'] and not user.is_superuser:
-            return Response(
-                {"error": "Access denied. Only Admin and Kitchen Staff can login here."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        if user.is_superuser and user.role != 'admin':
-            user.role = 'admin'
-            user.save()
-
-        refresh = RefreshToken.for_user(user)
-
-        response = Response({
-            "message": f"{user.role.capitalize()} logged in successfully",
-            "user": AdminUserSerializer(user).data
-        }, status=status.HTTP_200_OK)
-
-        # Set HttpOnly Cookies
-        response.set_cookie(key='access_token', value=str(refresh.access_token), httponly=True, samesite='Lax', secure=False)
-        response.set_cookie(key='refresh_token', value=str(refresh), httponly=True, samesite='Lax', secure=False)
-
-        return response
+    permission_classes = [permissions.IsAuthenticated]
+    def get_queryset(self):
+        if self.request.user.role != 'admin' and not self.request.user.is_superuser:
+            return User.objects.none()
+        
+        queryset = User.objects.filter(role__in=['employee', 'delivery_boy']).order_by('-date_joined')
+        
+        role_param = self.request.query_params.get('role')
+        if role_param in ['employee', 'delivery_boy']:
+            queryset = queryset.filter(role=role_param)
+            
+        return queryset
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return StaffCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return StaffUpdateSerializer
+        return AdminUserSerializer

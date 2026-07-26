@@ -24,13 +24,30 @@ class CustomUser(AbstractUser):
     REQUIRED_FIELDS = ['username']
 
     def save(self, *args, **kwargs):
-        # Auto-generate employee_id if not present for Staff roles
+        # Auto-generate unique employee_id safely without crashes on delete
         if not self.employee_id:
             if self.role == 'employee':
-                count = CustomUser.objects.filter(role='employee').count() + 1
-                self.employee_id = f"EMP-{count:03d}"  # Generates EMP-001, EMP-002, etc.
+                last_user = CustomUser.objects.filter(role='employee', employee_id__startswith='EMP-').order_by('-id').first()
+                if last_user and last_user.employee_id:
+                    try:
+                        last_num = int(last_user.employee_id.split('-')[1])
+                        new_num = last_num + 1
+                    except (IndexError, ValueError):
+                        new_num = 1
+                else:
+                    new_num = 1
+                self.employee_id = f"EMP-{new_num:03d}"
+
             elif self.role == 'delivery_boy':
-                count = CustomUser.objects.filter(role='delivery_boy').count() + 1
-                self.employee_id = f"DB-{count:03d}"   # Generates DB-001, DB-002, etc.
+                last_user = CustomUser.objects.filter(role='delivery_boy', employee_id__startswith='DB-').order_by('-id').first()
+                if last_user and last_user.employee_id:
+                    try:
+                        last_num = int(last_user.employee_id.split('-')[1])
+                        new_num = last_num + 1
+                    except (IndexError, ValueError):
+                        new_num = 1
+                else:
+                    new_num = 1
+                self.employee_id = f"DB-{new_num:03d}"
 
         super().save(*args, **kwargs)
