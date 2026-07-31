@@ -14,6 +14,8 @@ urlpatterns = [
     path('verify-otp', VerifyOTPView.as_view(), name='verify_otp'),
     # admin and staff login
     path('admin/login', StaffAndAdminLoginView.as_view(), name='staff_admin_login'),
+    # delivery boy login
+    path('delivery-boy/login', DeliveryBoyLoginView.as_view(), name='delivery_boy_login'),
     
     path('token/refresh', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('logout', LogoutView.as_view(), name='logout'),
