@@ -51,3 +51,14 @@ class CustomUser(AbstractUser):
                 self.employee_id = f"DB-{new_num:03d}"
 
         super().save(*args, **kwargs)
+
+class DeliveryBoyProfile(models.Model):
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='delivery_profile')
+    vehicle_number = models.CharField(max_length=30, blank=True, null=True)
+    is_on_duty = models.BooleanField(default=True)   # Online / Offline status
+    is_busy = models.BooleanField(default=False)    # Free / Delivering an order status
+    current_latitude = models.FloatField(blank=True, null=True)
+    current_longitude = models.FloatField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.user.username} Profile ({self.user.employee_id})"

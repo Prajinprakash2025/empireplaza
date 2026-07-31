@@ -1,10 +1,12 @@
 from django.urls import path, include
-from .views import SendOTPView, VerifyOTPView, LogoutView, CookieTokenRefreshView, StaffAndAdminLoginView, StaffManagementViewSet
+from .views import SendOTPView, VerifyOTPView, LogoutView, CookieTokenRefreshView, StaffAndAdminLoginView, StaffManagementViewSet,DeliveryBoyManagementViewSet, DeliveryBoyLoginView
 from rest_framework.routers import DefaultRouter
 
 
 router = DefaultRouter(trailing_slash=False)
 router.register(r'admin/staff', StaffManagementViewSet, basename='staff_management')
+router.register(r'admin/delivery-boys', DeliveryBoyManagementViewSet, basename='delivery_boy_management')
+
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -233,3 +233,72 @@ class StaffManagementViewSet(viewsets.ModelViewSet):
         elif self.action in ['update', 'partial_update']:
             return StaffUpdateSerializer
         return AdminUserSerializer
+
+
+from .models import DeliveryBoyProfile
+from .serializers import (
+    DeliveryBoyCreateSerializer, DeliveryBoyUserSerializer, 
+    StaffUpdateSerializer, StaffLoginSerializer
+)
+
+# 1. Admin CRUD for Delivery Boys Only
+class DeliveryBoyManagementViewSet(viewsets.ModelViewSet):
+    """
+    Admin ViewSet strictly for managing Delivery Fleet (DB-001, DB-002...).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.role != 'admin' and not self.request.user.is_superuser:
+            return User.objects.none()
+        return User.objects.filter(role='delivery_boy').order_by('-date_joined')
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return DeliveryBoyCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return StaffUpdateSerializer
+        return DeliveryBoyUserSerializer
+
+
+# 2. Dedicated Login API for Delivery Boys
+class DeliveryBoyLoginView(APIView):
+    """
+    Dedicated Login API for Delivery Boys.
+    Accepts Username or Email or Phone with Password.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = StaffLoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        identifier = serializer.validated_data['identifier']
+        password = serializer.validated_data['password']
+
+        user = User.objects.filter(
+            Q(username=identifier) | Q(email=identifier) | Q(phone_number=identifier)
+        ).first()
+
+        if user is None or not user.check_password(password):
+            return Response({"error": "Invalid login credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Restrict strictly to delivery_boy role
+        if user.role != 'delivery_boy':
+            return Response(
+                {"error": "Access denied. Only Delivery Boys can login here."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        refresh = RefreshToken.for_user(user)
+
+        response = Response({
+            "message": "Delivery Boy logged in successfully",
+            "user": DeliveryBoyUserSerializer(user).data
+        }, status=status.HTTP_200_OK)
+
+        response.set_cookie(key='access_token', value=str(refresh.access_token), httponly=True, samesite='Lax', secure=False)
+        response.set_cookie(key='refresh_token', value=str(refresh), httponly=True, samesite='Lax', secure=False)
+
+        return response

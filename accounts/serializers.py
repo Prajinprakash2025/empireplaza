@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from .models import CustomUser, DeliveryBoyProfile
+
 
 User = get_user_model()
 
@@ -76,3 +78,40 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+class DeliveryBoyProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryBoyProfile
+        fields = ['vehicle_number', 'is_on_duty', 'is_busy', 'current_latitude', 'current_longitude']
+
+
+class DeliveryBoyUserSerializer(serializers.ModelSerializer):
+    delivery_profile = DeliveryBoyProfileSerializer(read_only=True)
+
+    class Meta:
+        model = CustomUser
+        fields = ['id', 'employee_id', 'username', 'email', 'phone_number', 'role', 'address', 'delivery_profile']
+
+
+class DeliveryBoyCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True)
+    vehicle_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = CustomUser
+        fields = ['id', 'employee_id', 'username', 'email', 'phone_number', 'password', 'address', 'vehicle_number']
+
+    def create(self, validated_data):
+        vehicle_num = validated_data.pop('vehicle_number', '')
+        user = CustomUser.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data.get('email', ''),
+            phone_number=validated_data['phone_number'],
+            password=validated_data['password'],
+            role='delivery_boy',
+            address=validated_data.get('address', '')
+        )
+        # Create DeliveryBoyProfile automatically
+        DeliveryBoyProfile.objects.create(user=user, vehicle_number=vehicle_num)
+        return user
