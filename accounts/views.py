@@ -331,29 +331,33 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
 
 from .models import TableBooking
 from .serializers import TableBookingSerializer, TableBookingAdminUpdateSerializer
-
+# Throttle Security: Max 5 table bookings per hour per IP address
+class TableBookingThrottle(AnonRateThrottle):
+    rate = '5/hour'
+    
 class TableBookingViewSet(viewsets.ModelViewSet):
     """
-    Anyone can create a table booking (POST).
+    Anyone can create a table booking (POST) with rate limiting protection.
     Only Admins can view all bookings (GET) and update status (PATCH).
     """
     queryset = TableBooking.objects.all().order_by('-booking_date', '-booking_time')
-
+    def get_throttles(self):
+        # Apply rate limiting throttle strictly on Public Creation (POST)
+        if self.action == 'create':
+            return [TableBookingThrottle()]
+        return super().get_throttles()
     def get_serializer_class(self):
         if self.action in ['update', 'partial_update']:
             return TableBookingAdminUpdateSerializer
         return TableBookingSerializer
-
     def get_permissions(self):
         if self.action == 'create':
             return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
-
     def list(self, request, *args, **kwargs):
         if request.user.role != 'admin' and not request.user.is_superuser:
             return Response({"error": "Access denied. Only Admins can view bookings."}, status=status.HTTP_403_FORBIDDEN)
         return super().list(request, *args, **kwargs)
-
     def perform_create(self, serializer):
         # Automatically attach logged-in user if authenticated
         if self.request.user.is_authenticated:
