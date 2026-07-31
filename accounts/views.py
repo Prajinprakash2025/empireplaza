@@ -305,6 +305,10 @@ class DeliveryBoyLoginView(APIView):
 
 from .models import ContactMessage
 from .serializers import ContactMessageSerializer
+from rest_framework.throttling import AnonRateThrottle
+
+class ContactFormThrottle(AnonRateThrottle):
+    rate = '5/hour'
 
 class ContactMessageViewSet(viewsets.ModelViewSet):
     """
@@ -313,6 +317,7 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
     """
     queryset = ContactMessage.objects.all().order_by('-created_at')
     serializer_class = ContactMessageSerializer
+    throttle_classes = [ContactFormThrottle]
 
     def get_permissions(self):
         if self.action == 'create':
