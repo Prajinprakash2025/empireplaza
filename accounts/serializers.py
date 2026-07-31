@@ -115,3 +115,11 @@ class DeliveryBoyCreateSerializer(serializers.ModelSerializer):
         # Create DeliveryBoyProfile automatically
         DeliveryBoyProfile.objects.create(user=user, vehicle_number=vehicle_num)
         return user
+
+from .models import ContactMessage  
+
+class ContactMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContactMessage
+        fields = ['id', 'name', 'email', 'phone_number', 'subject', 'message', 'is_read', 'created_at']
+        read_only_fields = ['id', 'is_read', 'created_at']

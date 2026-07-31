@@ -1,11 +1,13 @@
 from django.urls import path, include
-from .views import SendOTPView, VerifyOTPView, LogoutView, CookieTokenRefreshView, StaffAndAdminLoginView, StaffManagementViewSet,DeliveryBoyManagementViewSet, DeliveryBoyLoginView
+from .views import SendOTPView, VerifyOTPView, LogoutView, CookieTokenRefreshView, StaffAndAdminLoginView, StaffManagementViewSet,DeliveryBoyManagementViewSet, DeliveryBoyLoginView,ContactMessageViewSet
 from rest_framework.routers import DefaultRouter
 
 
 router = DefaultRouter(trailing_slash=False)
 router.register(r'admin/staff', StaffManagementViewSet, basename='staff_management')
 router.register(r'admin/delivery-boys', DeliveryBoyManagementViewSet, basename='delivery_boy_management')
+router.register(r'contact', ContactMessageViewSet, basename='contact_messages')
+
 
 
 urlpatterns = [
@@ -16,6 +18,8 @@ urlpatterns = [
     path('admin/login', StaffAndAdminLoginView.as_view(), name='staff_admin_login'),
     # delivery boy login
     path('delivery-boy/login', DeliveryBoyLoginView.as_view(), name='delivery_boy_login'),
+
+    
     
     path('token/refresh', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('logout', LogoutView.as_view(), name='logout'),

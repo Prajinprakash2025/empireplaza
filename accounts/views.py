@@ -302,3 +302,24 @@ class DeliveryBoyLoginView(APIView):
         response.set_cookie(key='refresh_token', value=str(refresh), httponly=True, samesite='Lax', secure=False)
 
         return response
+
+from .models import ContactMessage
+from .serializers import ContactMessageSerializer
+
+class ContactMessageViewSet(viewsets.ModelViewSet):
+    """
+    Public users can send message (POST).
+    Only Admins can view (GET) and delete (DELETE) messages.
+    """
+    queryset = ContactMessage.objects.all().order_by('-created_at')
+    serializer_class = ContactMessageSerializer
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
+
+    def list(self, request, *args, **kwargs):
+        if request.user.role != 'admin' and not request.user.is_superuser:
+            return Response({"error": "Access denied. Only Admins can view messages."}, status=status.HTTP_403_FORBIDDEN)
+        return super().list(request, *args, **kwargs)
