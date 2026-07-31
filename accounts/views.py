@@ -328,3 +328,35 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
         if request.user.role != 'admin' and not request.user.is_superuser:
             return Response({"error": "Access denied. Only Admins can view messages."}, status=status.HTTP_403_FORBIDDEN)
         return super().list(request, *args, **kwargs)
+
+from .models import TableBooking
+from .serializers import TableBookingSerializer, TableBookingAdminUpdateSerializer
+
+class TableBookingViewSet(viewsets.ModelViewSet):
+    """
+    Anyone can create a table booking (POST).
+    Only Admins can view all bookings (GET) and update status (PATCH).
+    """
+    queryset = TableBooking.objects.all().order_by('-booking_date', '-booking_time')
+
+    def get_serializer_class(self):
+        if self.action in ['update', 'partial_update']:
+            return TableBookingAdminUpdateSerializer
+        return TableBookingSerializer
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
+
+    def list(self, request, *args, **kwargs):
+        if request.user.role != 'admin' and not request.user.is_superuser:
+            return Response({"error": "Access denied. Only Admins can view bookings."}, status=status.HTTP_403_FORBIDDEN)
+        return super().list(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        # Automatically attach logged-in user if authenticated
+        if self.request.user.is_authenticated:
+            serializer.save(user=self.request.user)
+        else:
+            serializer.save()

@@ -123,3 +123,22 @@ class ContactMessageSerializer(serializers.ModelSerializer):
         model = ContactMessage
         fields = ['id', 'name', 'email', 'phone_number', 'subject', 'message', 'is_read', 'created_at']
         read_only_fields = ['id', 'is_read', 'created_at']
+
+
+from .models import TableBooking  # <--- ഇമ്പോർട്ട് ചെയ്യുക
+
+class TableBookingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TableBooking
+        fields = [
+            'id', 'customer_name', 'phone_number', 'email', 
+            'number_of_guests', 'booking_date', 'booking_time', 
+            'special_request', 'status', 'created_at'
+        ]
+        read_only_fields = ['id', 'status', 'created_at']
+
+
+class TableBookingAdminUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TableBooking
+        fields = ['status']
