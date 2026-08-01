@@ -22,7 +22,7 @@ class UserSerializer(serializers.ModelSerializer):
 class AdminUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'employee_id', 'username', 'phone_number', 'role', 'address']
+        fields = ['id', 'employee_id', 'username', 'first_name', 'last_name', 'phone_number', 'role', 'address']
 
 # Unified Login Serializer for Admin & Employee
 class StaffLoginSerializer(serializers.Serializer):
@@ -43,11 +43,13 @@ class StaffCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'employee_id', 'username', 'email', 'phone_number', 'password', 'role', 'address']
+        fields = ['id', 'employee_id', 'username', 'first_name', 'last_name', 'email', 'phone_number', 'password', 'role', 'address']
 
     def create(self, validated_data):
         user = User.objects.create_user(
             username=validated_data['username'],
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', ''),
             email=validated_data.get('email', ''),
             phone_number=validated_data['phone_number'],
             password=validated_data['password'],
@@ -61,9 +63,11 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'phone_number', 'role', 'address', 'password']
+        fields = ['username', 'first_name', 'last_name', 'email', 'phone_number', 'role', 'address', 'password']
         extra_kwargs = {
             'username': {'required': False},
+            'first_name': {'required': False},
+            'last_name': {'required': False},
             'phone_number': {'required': False},
             'email': {'required': False},
             'role': {'required': False},
@@ -91,7 +95,7 @@ class DeliveryBoyUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'employee_id', 'username', 'email', 'phone_number', 'role', 'address', 'delivery_profile']
+        fields = ['id', 'employee_id', 'username', 'first_name', 'last_name', 'email', 'phone_number', 'role', 'address', 'delivery_profile']
 
 
 class DeliveryBoyCreateSerializer(serializers.ModelSerializer):
@@ -100,12 +104,14 @@ class DeliveryBoyCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'employee_id', 'username', 'email', 'phone_number', 'password', 'address', 'vehicle_number']
+        fields = ['id', 'employee_id', 'username', 'first_name', 'last_name', 'email', 'phone_number', 'password', 'address', 'vehicle_number']
 
     def create(self, validated_data):
         vehicle_num = validated_data.pop('vehicle_number', '')
         user = CustomUser.objects.create_user(
             username=validated_data['username'],
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', ''),
             email=validated_data.get('email', ''),
             phone_number=validated_data['phone_number'],
             password=validated_data['password'],
