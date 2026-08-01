@@ -211,17 +211,16 @@ from .serializers import (
     
 
 
+from .permissions import IsAdminRole
+
 class StaffManagementViewSet(viewsets.ModelViewSet):
     """
     Admin-Only ViewSet for managing Kitchen Staff (role='employee' ONLY).
+    Strictly blocked for Employees, Delivery Boys, and Customers.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminRole]
 
     def get_queryset(self):
-        if self.request.user.role != 'admin' and not self.request.user.is_superuser:
-            return User.objects.none()
-        
-        # Filter ONLY kitchen employees
         return User.objects.filter(role='employee').order_by('-date_joined')
 
     def get_serializer_class(self):
@@ -242,12 +241,11 @@ from .serializers import (
 class DeliveryBoyManagementViewSet(viewsets.ModelViewSet):
     """
     Admin ViewSet strictly for managing Delivery Fleet (DB-001, DB-002...).
+    Strictly blocked for Employees, Delivery Boys, and Customers.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminRole]
 
     def get_queryset(self):
-        if self.request.user.role != 'admin' and not self.request.user.is_superuser:
-            return User.objects.none()
         return User.objects.filter(role='delivery_boy').order_by('-date_joined')
 
     def get_serializer_class(self):
@@ -319,12 +317,7 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'create':
             return [permissions.AllowAny()]
-        return [permissions.IsAuthenticated()]
-
-    def list(self, request, *args, **kwargs):
-        if request.user.role != 'admin' and not request.user.is_superuser:
-            return Response({"error": "Access denied. Only Admins can view messages."}, status=status.HTTP_403_FORBIDDEN)
-        return super().list(request, *args, **kwargs)
+        return [IsAdminRole()]
 
 from .models import TableBooking
 from .serializers import TableBookingSerializer, TableBookingAdminUpdateSerializer
@@ -335,28 +328,25 @@ class TableBookingThrottle(AnonRateThrottle):
 class TableBookingViewSet(viewsets.ModelViewSet):
     """
     Anyone can create a table booking (POST) with rate limiting protection.
-    Only Admins can view all bookings (GET) and update status (PATCH).
+    Only Admins can view all bookings (GET), update status (PATCH), and delete (DELETE).
     """
     queryset = TableBooking.objects.all().order_by('-booking_date', '-booking_time')
     def get_throttles(self):
-        # Apply rate limiting throttle strictly on Public Creation (POST)
         if self.action == 'create':
             return [TableBookingThrottle()]
         return super().get_throttles()
+
     def get_serializer_class(self):
         if self.action in ['update', 'partial_update']:
             return TableBookingAdminUpdateSerializer
         return TableBookingSerializer
+
     def get_permissions(self):
         if self.action == 'create':
             return [permissions.AllowAny()]
-        return [permissions.IsAuthenticated()]
-    def list(self, request, *args, **kwargs):
-        if request.user.role != 'admin' and not request.user.is_superuser:
-            return Response({"error": "Access denied. Only Admins can view bookings."}, status=status.HTTP_403_FORBIDDEN)
-        return super().list(request, *args, **kwargs)
+        return [IsAdminRole()]
+
     def perform_create(self, serializer):
-        # Automatically attach logged-in user if authenticated
         if self.request.user.is_authenticated:
             serializer.save(user=self.request.user)
         else:
