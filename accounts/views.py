@@ -213,20 +213,17 @@ from .serializers import (
 
 class StaffManagementViewSet(viewsets.ModelViewSet):
     """
-    Admin-Only ViewSet for managing Staff (Employee & Delivery Boy CRUD).
+    Admin-Only ViewSet for managing Kitchen Staff (role='employee' ONLY).
     """
     permission_classes = [permissions.IsAuthenticated]
+
     def get_queryset(self):
         if self.request.user.role != 'admin' and not self.request.user.is_superuser:
             return User.objects.none()
         
-        queryset = User.objects.filter(role__in=['employee', 'delivery_boy']).order_by('-date_joined')
-        
-        role_param = self.request.query_params.get('role')
-        if role_param in ['employee', 'delivery_boy']:
-            queryset = queryset.filter(role=role_param)
-            
-        return queryset
+        # Filter ONLY kitchen employees
+        return User.objects.filter(role='employee').order_by('-date_joined')
+
     def get_serializer_class(self):
         if self.action == 'create':
             return StaffCreateSerializer
