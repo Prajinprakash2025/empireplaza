@@ -22,7 +22,7 @@ class UserSerializer(serializers.ModelSerializer):
 class AdminUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'employee_id', 'username', 'first_name', 'last_name', 'phone_number', 'role', 'address']
+        fields = ['id', 'employee_id', 'username', 'first_name', 'last_name', 'email', 'phone_number', 'role', 'address']
 
 # Unified Login Serializer for Admin & Employee
 class StaffLoginSerializer(serializers.Serializer):
