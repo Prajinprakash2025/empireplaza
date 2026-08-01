@@ -14,6 +14,17 @@ from django.conf import settings
 
 User = get_user_model()
 
+
+
+# Custom function to embed Role, Username, and Employee ID into JWT Token Payload
+def get_tokens_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    refresh['role'] = user.role
+    refresh['username'] = user.username
+    if user.employee_id:
+        refresh['employee_id'] = user.employee_id
+    return refresh
+
 class SendOTPView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -82,7 +93,7 @@ class VerifyOTPView(APIView):
         user.otp_created_at = None
         user.save()
 
-        refresh = RefreshToken.for_user(user)
+        refresh = get_tokens_for_user(user)
 
         response = Response({
             "message": "OTP verified successfully",
@@ -129,7 +140,7 @@ class StaffAndAdminLoginView(APIView):
             user.role = 'admin'
             user.save()
 
-        refresh = RefreshToken.for_user(user)
+        refresh = get_tokens_for_user(user)
 
         response = Response({
             "message": f"{user.role.capitalize()} logged in successfully",
@@ -286,7 +297,7 @@ class DeliveryBoyLoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        refresh = RefreshToken.for_user(user)
+        refresh = get_tokens_for_user(user)
 
         response = Response({
             "message": "Delivery Boy logged in successfully",
