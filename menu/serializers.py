@@ -1,10 +1,11 @@
 from rest_framework import serializers
+from django.db import transaction
 from .models import Category, MenuItem, MenuItemVariant # 🌟 Added MenuItemVariant
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = '__all__'
+        fields = ['id', 'name', 'image']
 
 # ============================================================
 # 🌟 NEW: VARIANT SERIALIZER
@@ -23,7 +24,24 @@ class MenuItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MenuItem
-        fields = '__all__'
+        fields = [
+            'id',
+            'category',
+            'category_name',
+            'section',
+            'name',
+            'description',
+            'image',
+            'banner_image',
+            'dietary_preference',
+            'has_variants',
+            'actual_price',
+            'offer_price',
+            'quantity',
+            'is_available',
+            'created_at',
+            'variants',
+        ]
 
     # ============================================================
     # 🛑 CUSTOM VALIDATION FOR SECTION LIMITS (Kept exactly as you wrote it!)
@@ -60,6 +78,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
     # ============================================================
     # 🌟 NEW: CUSTOM CREATE TO SAVE ITEM AND VARIANTS TOGETHER
     # ============================================================
+    @transaction.atomic
     def create(self, validated_data):
         # 1. Pull the variants list out of the request data
         variants_data = validated_data.pop('variants', [])
@@ -76,6 +95,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
     # ============================================================
     # 🌟 NEW: CUSTOM UPDATE TO HANDLE EDITING VARIANTS
     # ============================================================
+    @transaction.atomic
     def update(self, instance, validated_data):
         # 1. Pull the variants list out (use None as default to check if it was provided)
         variants_data = validated_data.pop('variants', None)

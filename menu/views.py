@@ -23,20 +23,13 @@ class AdminPagination(PageNumberPagination):
 class CategoryListCreateView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+    permission_classes = [IsEmployee]
 
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [AllowAny()]
-        return [IsEmployee()]  # Allowed for Admin & Kitchen Staff
 
 class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [AllowAny()]
-        return [IsEmployee()]  # Allowed for Admin & Kitchen Staff
+    permission_classes = [IsEmployee]
 
     def update(self, request, *args, **kwargs):
         response = super().update(request, *args, **kwargs)
@@ -62,91 +55,103 @@ class PublicCategoryListView(generics.ListAPIView):
 
 
 # ==========================================
-# MENU ITEM VIEWS 
+# MENU ITEM VIEWS
 # ==========================================
 class PublicMenuItemListView(generics.ListAPIView):
     serializer_class = MenuItemSerializer
-    pagination_class = None 
+    permission_classes = [AllowAny]
+    pagination_class = None
 
     def get_queryset(self):
-        queryset = MenuItem.objects.prefetch_related('variants').filter(is_available=True).order_by('-created_at')
-        
+        queryset = (
+            MenuItem.objects
+            .prefetch_related('variants')
+            .filter(is_available=True)
+            .order_by('-created_at')
+        )
+
         search_query = self.request.query_params.get('search', '')
         category_id = self.request.query_params.get('category', '')
         section_name = self.request.query_params.get('section', '')
-        diet_pref = self.request.query_params.get('diet', '')  
-        
+        diet_pref = self.request.query_params.get('diet', '')
+
         if search_query:
             queryset = queryset.filter(
-                Q(name__icontains=search_query) | 
+                Q(name__icontains=search_query) |
                 Q(description__icontains=search_query) |
-                Q(category__name__icontains=search_query) 
+                Q(category__name__icontains=search_query)
             )
-            
+
         if category_id and str(category_id).upper() != 'ALL':
             queryset = queryset.filter(category_id=category_id)
-            
+
         if section_name and str(section_name).upper() != 'ALL':
             queryset = queryset.filter(section__iexact=section_name)
-            
+
         if diet_pref and str(diet_pref).upper() != 'ALL':
-            queryset = queryset.filter(dietary_preference__iexact=diet_pref)
+            queryset = queryset.filter(
+                dietary_preference__iexact=diet_pref
+            )
 
         return queryset
-    
-    
+
+
 class AdminMenuItemListCreateView(generics.ListCreateAPIView):
     serializer_class = MenuItemSerializer
-    permission_classes = [IsEmployee]  # Allowed for Admin & Kitchen Staff
-    pagination_class = AdminPagination 
+    permission_classes = [IsEmployee]
+    pagination_class = AdminPagination
 
     def get_queryset(self):
-        queryset = MenuItem.objects.prefetch_related('variants').all().order_by('-created_at')
-        
+        queryset = (
+            MenuItem.objects
+            .prefetch_related('variants')
+            .all()
+            .order_by('-created_at')
+        )
+
         search_query = self.request.query_params.get('search', '')
         category_id = self.request.query_params.get('category', '')
         section_name = self.request.query_params.get('section', '')
         low_stock = self.request.query_params.get('low_stock', '')
         is_available_param = self.request.query_params.get('available', '')
-        
+
         if search_query:
             queryset = queryset.filter(
-                Q(name__icontains=search_query) | 
+                Q(name__icontains=search_query) |
                 Q(description__icontains=search_query) |
-                Q(category__name__icontains=search_query) 
+                Q(category__name__icontains=search_query)
             )
-            
+
         if category_id and str(category_id).upper() != 'ALL':
             queryset = queryset.filter(category_id=category_id)
-            
+
         if section_name and str(section_name).upper() != 'ALL':
             queryset = queryset.filter(section__iexact=section_name)
-            
+
         if low_stock and str(low_stock).lower() == 'true':
             queryset = queryset.filter(
-                Q(has_variants=False, quantity__lt=10) | 
+                Q(has_variants=False, quantity__lt=10) |
                 Q(has_variants=True, variants__quantity__lt=10)
             ).distinct()
-            
+
         if is_available_param:
             if str(is_available_param).lower() == 'true':
                 queryset = queryset.filter(is_available=True)
+
             elif str(is_available_param).lower() == 'false':
                 queryset = queryset.filter(is_available=False)
-            
+
         return queryset
+
 
 class MenuItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = MenuItem.objects.prefetch_related('variants').all()
     serializer_class = MenuItemSerializer
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [AllowAny()]
-        return [IsEmployee()]  # Allowed for Admin & Kitchen Staff
+    permission_classes = [IsEmployee]
 
     def update(self, request, *args, **kwargs):
         response = super().update(request, *args, **kwargs)
+
         return Response({
             "status": True,
             "message": "Menu Item updated successfully!",
@@ -156,6 +161,7 @@ class MenuItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
+
         return Response({
             "status": True,
             "message": "Menu Item deleted successfully!"
