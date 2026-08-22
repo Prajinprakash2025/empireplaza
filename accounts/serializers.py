@@ -122,13 +122,19 @@ class DeliveryBoyCreateSerializer(serializers.ModelSerializer):
         DeliveryBoyProfile.objects.create(user=user, vehicle_number=vehicle_num)
         return user
 
-from .models import ContactMessage  
+from .models import ContactMessage
+
+
+class ContactMessageCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContactMessage
+        fields = ['name', 'email', 'phone_number', 'subject', 'message']
 
 class ContactMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContactMessage
         fields = ['id', 'name', 'email', 'phone_number', 'subject', 'message', 'is_read', 'created_at']
-        read_only_fields = ['id', 'is_read', 'created_at']
+        read_only_fields = ['id', 'name', 'email', 'phone_number', 'subject', 'message', 'created_at']
 
 
 from .models import TableBooking  # <--- ഇമ്പോർട്ട് ചെയ്യുക

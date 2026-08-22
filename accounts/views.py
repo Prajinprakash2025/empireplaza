@@ -310,7 +310,7 @@ class DeliveryBoyLoginView(APIView):
         return response
 
 from .models import ContactMessage
-from .serializers import ContactMessageSerializer
+from .serializers import ContactMessageCreateSerializer, ContactMessageSerializer
 from rest_framework.throttling import AnonRateThrottle
 
 class ContactFormThrottle(AnonRateThrottle):
@@ -322,8 +322,12 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
     Only Admins can view (GET) and delete (DELETE) messages.
     """
     queryset = ContactMessage.objects.all().order_by('-created_at')
-    serializer_class = ContactMessageSerializer
     throttle_classes = [ContactFormThrottle]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return ContactMessageCreateSerializer
+        return ContactMessageSerializer
 
     def get_permissions(self):
         if self.action == 'create':
