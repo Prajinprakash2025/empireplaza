@@ -166,3 +166,46 @@ class MenuItemDetailView(generics.RetrieveUpdateDestroyAPIView):
             "status": True,
             "message": "Menu Item deleted successfully!"
         }, status=status.HTTP_200_OK)
+
+
+from rest_framework.views import APIView
+
+# ==========================================
+# 🌟 HOME PAGE SINGLE COMPOSITE API
+# ==========================================
+class PublicHomeDataView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        # 1. Fetch All Categories
+        categories = Category.objects.all()
+
+        # 2. Base Queryset for Available Menu Items (with variants prefetched for fast performance)
+        available_items = (
+            MenuItem.objects
+            .filter(is_available=True)
+            .select_related('category')
+            .prefetch_related('variants')
+            .order_by('-created_at')
+        )
+
+        # 3. Filter by Sections
+        banners = available_items.filter(section='BANNER')
+        best_sellers = available_items.filter(section='BEST SELLER')
+        combo_menu = available_items.filter(section='COMBO MENU')
+        todays_special = available_items.filter(section="TODAY'S SPECIAL")
+
+        # 4. Context passing for Full Image URLs (e.g. http://127.0.0.1:8000/media/...)
+        context = {'request': request}
+
+        # 5. Return all data in a single clean JSON Response
+        return Response({
+            "status": True,
+            "data": {
+                "banners": MenuItemSerializer(banners, many=True, context=context).data,
+                "categories": CategorySerializer(categories, many=True, context=context).data,
+                "best_sellers": MenuItemSerializer(best_sellers, many=True, context=context).data,
+                "combo_menu": MenuItemSerializer(combo_menu, many=True, context=context).data,
+                "todays_special": MenuItemSerializer(todays_special, many=True, context=context).data,
+            }
+        }, status=status.HTTP_200_OK)
