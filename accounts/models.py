@@ -51,6 +51,12 @@ class CustomUser(AbstractUser):
                 self.employee_id = f"DB-{new_num:03d}"
 
         super().save(*args, **kwargs)
+    def is_otp_expired(self):
+        if not self.otp_created_at:
+            return True
+        from datetime import timedelta
+        # 10 minutes valid
+        return timezone.now() > self.otp_created_at + timedelta(minutes=10)
 
 class DeliveryBoyProfile(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='delivery_profile')
