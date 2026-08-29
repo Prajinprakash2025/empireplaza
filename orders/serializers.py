@@ -1,0 +1,419 @@
+from decimal import Decimal
+from django.db import transaction
+from rest_framework import serializers
+
+from menu.models import MenuItem, MenuItemVariant
+from .models import Cart, CartItem, Order, OrderItem
+
+
+# ============================================================
+# 🛒 CART ITEM SERIALIZERS
+# ============================================================
+
+class CartMenuItemMinimalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MenuItem
+        fields = [
+            'id',
+            'name',
+            'image',
+            'dietary_preference',
+            'has_variants',
+            'actual_price',
+            'offer_price',
+            'is_available',
+        ]
+
+
+class CartVariantMinimalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MenuItemVariant
+        fields = [
+            'id',
+            'size_name',
+            'actual_price',
+            'offer_price',
+            'is_available',
+        ]
+
+
+class CartItemReadSerializer(serializers.ModelSerializer):
+    menu_item = CartMenuItemMinimalSerializer(read_only=True)
+    variant = CartVariantMinimalSerializer(read_only=True)
+    unit_price = serializers.SerializerMethodField()
+    line_total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CartItem
+        fields = [
+            'id',
+            'menu_item',
+            'variant',
+            'quantity',
+            'unit_price',
+            'line_total',
+            'added_at',
+            'updated_at',
+        ]
+
+    def get_unit_price(self, obj):
+        if obj.variant:
+            price = obj.variant.offer_price if obj.variant.offer_price is not None else obj.variant.actual_price
+        else:
+            price = obj.menu_item.offer_price if obj.menu_item.offer_price is not None else obj.menu_item.actual_price
+        return str(price) if price is not None else "0.00"
+
+    def get_line_total(self, obj):
+        unit_price = Decimal(self.get_unit_price(obj))
+        return str(unit_price * obj.quantity)
+
+
+class CartReadSerializer(serializers.ModelSerializer):
+    items = CartItemReadSerializer(many=True, read_only=True)
+    total_items = serializers.SerializerMethodField()
+    total_price = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Cart
+        fields = [
+            'id',
+            'items',
+            'total_items',
+            'total_price',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_total_items(self, obj):
+        return sum(item.quantity for item in obj.items.all())
+
+    def get_total_price(self, obj):
+        total = Decimal('0.00')
+        for item in obj.items.all():
+            if item.variant:
+                price = item.variant.offer_price if item.variant.offer_price is not None else item.variant.actual_price
+            else:
+                price = item.menu_item.offer_price if item.menu_item.offer_price is not None else item.menu_item.actual_price
+            if price is not None:
+                total += Decimal(str(price)) * item.quantity
+        return str(total)
+
+
+class CartItemAddSerializer(serializers.Serializer):
+    menu_item_id = serializers.IntegerField()
+    variant_id = serializers.IntegerField(required=False, allow_null=True, default=None)
+    quantity = serializers.IntegerField(default=1, min_value=1)
+
+    def validate(self, attrs):
+        menu_item_id = attrs.get('menu_item_id')
+        variant_id = attrs.get('variant_id')
+        quantity = attrs.get('quantity', 1)
+
+        try:
+            menu_item = MenuItem.objects.get(pk=menu_item_id)
+        except MenuItem.DoesNotExist:
+            raise serializers.ValidationError({"menu_item_id": "Menu item not found."})
+
+        if not menu_item.is_available:
+            raise serializers.ValidationError({"menu_item_id": "This item is currently unavailable."})
+
+        variant = None
+        if menu_item.has_variants:
+            if not variant_id:
+                raise serializers.ValidationError({"variant_id": "Please select a size/variant for this item."})
+            try:
+                variant = MenuItemVariant.objects.get(pk=variant_id, menu_item=menu_item)
+            except MenuItemVariant.DoesNotExist:
+                raise serializers.ValidationError({"variant_id": "Invalid variant selected for this item."})
+
+            if not variant.is_available:
+                raise serializers.ValidationError({"variant_id": "This size/variant is currently unavailable."})
+
+            if quantity > variant.quantity:
+                raise serializers.ValidationError({"quantity": f"Only {variant.quantity} items available in stock."})
+        else:
+            if variant_id:
+                raise serializers.ValidationError({"variant_id": "This item does not have variants."})
+
+            if quantity > menu_item.quantity:
+                raise serializers.ValidationError({"quantity": f"Only {menu_item.quantity} items available in stock."})
+
+        attrs['menu_item'] = menu_item
+        attrs['variant'] = variant
+        return attrs
+
+    def create(self, validated_data):
+        user = self.context['request'].user
+        cart, _ = Cart.objects.get_or_create(user=user)
+        
+        menu_item = validated_data['menu_item']
+        variant = validated_data.get('variant')
+        quantity = validated_data.get('quantity', 1)
+
+        cart_item, created = CartItem.objects.get_or_create(
+            cart=cart,
+            menu_item=menu_item,
+            variant=variant,
+            defaults={'quantity': quantity}
+        )
+
+        if not created:
+            # If already exists in cart, increment quantity
+            new_quantity = cart_item.quantity + quantity
+            max_stock = variant.quantity if variant else menu_item.quantity
+            if new_quantity > max_stock:
+                raise serializers.ValidationError({
+                    "quantity": f"Cannot add more. Total in cart exceeds available stock ({max_stock})."
+                })
+            cart_item.quantity = new_quantity
+            cart_item.save(update_fields=['quantity', 'updated_at'])
+
+        cart.save(update_fields=['updated_at'])
+        return cart_item
+
+
+class CartItemQuantitySerializer(serializers.ModelSerializer):
+    quantity = serializers.IntegerField(min_value=1)
+
+    class Meta:
+        model = CartItem
+        fields = ['quantity']
+
+    def validate_quantity(self, value):
+        instance = self.instance
+        if instance:
+            max_stock = instance.variant.quantity if instance.variant else instance.menu_item.quantity
+            if value > max_stock:
+                raise serializers.ValidationError(f"Only {max_stock} items available in stock.")
+        return value
+
+
+# ============================================================
+# 📦 ORDER SERIALIZERS
+# ============================================================
+
+class OrderItemReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrderItem
+        fields = [
+            'id',
+            'menu_item',
+            'variant',
+            'item_name',
+            'variant_name',
+            'quantity',
+            'unit_price',
+            'line_total',
+        ]
+
+
+class OrderReadSerializer(serializers.ModelSerializer):
+    items = OrderItemReadSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            'id',
+            'customer_name',
+            'customer_phone',
+            'delivery_address',
+            'special_instructions',
+            'total_price',
+            'status',
+            'payment_status',
+            'items',
+            'created_at',
+            'updated_at',
+        ]
+
+
+class OrderStatusUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Order
+        fields = ['status', 'payment_status']
+
+
+class CheckoutSerializer(serializers.Serializer):
+    customer_name = serializers.CharField(max_length=150)
+    customer_phone = serializers.CharField(max_length=15)
+    delivery_address = serializers.CharField()
+    special_instructions = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        cart = Cart.objects.filter(user=user).prefetch_related('items__menu_item', 'items__variant').first()
+
+        if not cart or not cart.items.exists():
+            raise serializers.ValidationError("Your cart is empty. Please add items before checkout.")
+
+        # Stock and Availability verification
+        for item in cart.items.all():
+            menu_item = item.menu_item
+            if not menu_item.is_available:
+                raise serializers.ValidationError(f"'{menu_item.name}' is no longer available.")
+
+            if item.variant:
+                if not item.variant.is_available:
+                    raise serializers.ValidationError(f"'{menu_item.name} - {item.variant.size_name}' is no longer available.")
+                if item.quantity > item.variant.quantity:
+                    raise serializers.ValidationError(
+                        f"Stock insufficient for '{menu_item.name} - {item.variant.size_name}'. Available: {item.variant.quantity}"
+                    )
+            else:
+                if item.quantity > menu_item.quantity:
+                    raise serializers.ValidationError(
+                        f"Stock insufficient for '{menu_item.name}'. Available: {menu_item.quantity}"
+                    )
+
+        attrs['cart'] = cart
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        user = self.context['request'].user
+        cart = validated_data.pop('cart')
+
+        customer_name = validated_data['customer_name']
+        customer_phone = validated_data['customer_phone']
+        delivery_address = validated_data['delivery_address']
+        special_instructions = validated_data.get('special_instructions', '')
+
+        # 1. Calculate Total & Prepare Order Items
+        total_price = Decimal('0.00')
+        order_items_to_create = []
+
+        for item in cart.items.select_related('menu_item', 'variant').all():
+            menu_item = item.menu_item
+            variant = item.variant
+
+            if variant:
+                unit_price = variant.offer_price if variant.offer_price is not None else variant.actual_price
+                variant_name = variant.size_name
+            else:
+                unit_price = menu_item.offer_price if menu_item.offer_price is not None else menu_item.actual_price
+                variant_name = ''
+
+            unit_price = Decimal(str(unit_price))
+            line_total = unit_price * item.quantity
+            total_price += line_total
+
+            order_items_to_create.append({
+                'menu_item': menu_item,
+                'variant': variant,
+                'item_name': menu_item.name,
+                'variant_name': variant_name,
+                'quantity': item.quantity,
+                'unit_price': unit_price,
+                'line_total': line_total,
+            })
+
+            # 2. Automatically Deduct Inventory Stock
+            if variant:
+                variant.quantity -= item.quantity
+                variant.save(update_fields=['quantity'])
+            else:
+                menu_item.quantity -= item.quantity
+                menu_item.save(update_fields=['quantity'])
+
+        # 3. Create Main Order
+        order = Order.objects.create(
+            user=user,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            delivery_address=delivery_address,
+            special_instructions=special_instructions,
+            total_price=total_price,
+            status='pending',
+            payment_status='pending',
+        )
+
+        # 4. Create OrderItems
+        for item_data in order_items_to_create:
+            OrderItem.objects.create(
+                order=order,
+                **item_data
+            )
+
+        # 5. Clear Cart after successful order
+        cart.items.all().delete()
+        cart.save(update_fields=['updated_at'])
+
+        return order
+
+
+# ============================================================
+# 🔄 GUEST CART TO USER CART MERGE SERIALIZER
+# ============================================================
+
+class GuestCartItemInputSerializer(serializers.Serializer):
+    menu_item_id = serializers.IntegerField()
+    variant_id = serializers.IntegerField(required=False, allow_null=True, default=None)
+    quantity = serializers.IntegerField(default=1, min_value=1)
+
+
+class CartMergeSerializer(serializers.Serializer):
+    items = GuestCartItemInputSerializer(many=True, required=False, default=[])
+
+    def save(self):
+        user = self.context['request'].user
+        cart, _ = Cart.objects.get_or_create(user=user)
+        items_data = self.validated_data.get('items', [])
+
+        for item_data in items_data:
+            menu_item_id = item_data.get('menu_item_id')
+            variant_id = item_data.get('variant_id')
+            qty = item_data.get('quantity', 1)
+
+            # 1. Check if MenuItem exists & available
+            try:
+                menu_item = MenuItem.objects.get(pk=menu_item_id, is_available=True)
+            except MenuItem.DoesNotExist:
+                continue  # Skip unavailable or deleted items
+
+            variant = None
+            max_stock = menu_item.quantity
+
+            # 2. Check Variant if item has variants
+            if menu_item.has_variants:
+                if not variant_id:
+                    continue
+                try:
+                    variant = MenuItemVariant.objects.get(
+                        pk=variant_id, 
+                        menu_item=menu_item, 
+                        is_available=True
+                    )
+                    max_stock = variant.quantity
+                except MenuItemVariant.DoesNotExist:
+                    continue
+            else:
+                variant = None
+
+            # Skip if out of stock
+            if max_stock <= 0:
+                continue
+
+            # 3. Check if already exists in User DB Cart
+            cart_item = CartItem.objects.filter(
+                cart=cart,
+                menu_item=menu_item,
+                variant=variant
+            ).first()
+
+            if cart_item:
+                # Merge quantities (capped at available stock)
+                new_qty = min(cart_item.quantity + qty, max_stock)
+                cart_item.quantity = new_qty
+                cart_item.save(update_fields=['quantity', 'updated_at'])
+            else:
+                # Add as new item with stock limit check
+                quantity_to_add = min(qty, max_stock)
+                CartItem.objects.create(
+                    cart=cart,
+                    menu_item=menu_item,
+                    variant=variant,
+                    quantity=quantity_to_add
+                )
+
+        cart.save(update_fields=['updated_at'])
+        return cart

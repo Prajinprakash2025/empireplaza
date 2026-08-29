@@ -22,6 +22,8 @@ from .serializers import (
     CheckoutSerializer,
     OrderReadSerializer,
     OrderStatusUpdateSerializer,
+    CartMergeSerializer,   # 👈 Add this
+
 )
 
 
@@ -365,3 +367,36 @@ class StaffOrderStatusUpdateView(APIView):
                 context={'request': request},
             ).data,
         })
+
+
+
+# 2. View Definition:
+class CartMergeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def post(self, request):
+        serializer = CartMergeSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        cart = serializer.save()
+        # Prefetch updated items for output response
+        cart = (
+            Cart.objects
+            .prefetch_related(
+                Prefetch(
+                    'items',
+                    queryset=(
+                        CartItem.objects
+                        .select_related('menu_item', 'variant')
+                        .order_by('added_at')
+                    ),
+                )
+            )
+            .get(pk=cart.pk)
+        )
+        return Response({
+            'status': True,
+            'message': 'Guest cart merged successfully.',
+            'data': CartReadSerializer(cart, context={'request': request}).data
+        }, status=status.HTTP_200_OK)
