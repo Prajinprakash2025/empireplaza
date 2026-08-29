@@ -6,7 +6,7 @@ from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import SendOTPSerializer, VerifyOTPSerializer, UserSerializer, AdminUserSerializer
+from .serializers import SendOTPSerializer, VerifyOTPSerializer, UserSerializer, AdminUserSerializer,SignUpSerializer
 from rest_framework import status, permissions, viewsets
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
@@ -15,6 +15,62 @@ from django.conf import settings
 User = get_user_model()
 
 
+
+# 2. 🌟 NEW: Customer Sign Up View (Full Name, Phone, Email vangi OTP send cheyyunnu):
+class SignUpView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def post(self, request):
+        serializer = SignUpSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        full_name = serializer.validated_data['full_name']
+        phone_number = serializer.validated_data['phone_number']
+        email = serializer.validated_data.get('email') or ''
+        # Generate 6-digit OTP
+        otp_code = str(random.randint(100000, 999999))
+        # Create or update user details
+        user, created = User.objects.get_or_create(
+            phone_number=phone_number,
+            defaults={
+                'username': full_name,
+                'first_name': full_name,
+                'email': email,
+                'role': 'user',
+            }
+        )
+        # If user existed as unverified, update their latest name and email
+        if not created:
+            user.username = full_name
+            user.first_name = full_name
+            user.email = email
+        user.otp = otp_code
+        user.otp_created_at = timezone.now()
+        user.is_verified = False
+        user.save()
+        print(f"--- SIGNUP OTP for {phone_number} is {otp_code} ---")
+        return Response({
+            "status": True,
+            "message": "Account details saved. OTP sent successfully for verification.",
+            "otp_development_only": otp_code
+        }, status=status.HTTP_200_OK)
+# 3. 🌟 NEW: Customer Profile & Address View (Address update cheyyaan):
+class UserProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response({
+            "status": True,
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+    def patch(self, request):
+        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({
+            "status": True,
+            "message": "Profile & Address updated successfully!",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
 
 # Custom function to embed Role, Username, and Employee ID into JWT Token Payload
 def get_tokens_for_user(user):

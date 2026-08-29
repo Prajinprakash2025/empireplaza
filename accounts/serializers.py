@@ -5,6 +5,25 @@ from .models import CustomUser, DeliveryBoyProfile
 
 User = get_user_model()
 
+# 1. Update UserSerializer (first_name, email koodi include cheythu):
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'first_name', 'email', 'phone_number', 'role', 'address', 'is_verified']
+
+
+# 2. 🌟 NEW: Customer Sign Up Serializer:
+class SignUpSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=150)
+    phone_number = serializers.CharField(max_length=15)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+
+    def validate_phone_number(self, value):
+        user = User.objects.filter(phone_number=value, is_verified=True).first()
+        if user:
+            raise serializers.ValidationError("An account with this phone number already exists. Please Sign In.")
+        return value
+
 class SendOTPSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=15)
     role = serializers.CharField(max_length=20, required=False, default='user')
