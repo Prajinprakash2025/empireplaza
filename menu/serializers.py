@@ -19,10 +19,13 @@ class MenuItemVariantSerializer(serializers.ModelSerializer):
 
 
 # ============================================================
-# 🌟 MAIN MENU ITEM SERIALIZER (Quantity Removed from Output)
+# 🌟 MAIN MENU ITEM SERIALIZER
 # ============================================================
 class MenuItemSerializer(serializers.ModelSerializer):
+    # This keeps the category name visible in responses
     category_name = serializers.ReadOnlyField(source='category.name') 
+    
+    # Grabs all related variants and attaches them to the main item
     variants = MenuItemVariantSerializer(many=True, required=False)
 
     class Meta:
@@ -46,11 +49,26 @@ class MenuItemSerializer(serializers.ModelSerializer):
         ]
 
     # ============================================================
-    # 🛑 CUSTOM VALIDATION FOR SECTION LIMITS
+    # 🛑 CUSTOM VALIDATION FOR PRICES & SECTION LIMITS
     # ============================================================
     def validate(self, data):
         section = data.get('section')
-        
+        has_variants = data.get('has_variants', getattr(self.instance, 'has_variants', False))
+
+        # 🌟 1. Price Auto-Clean: If product has variants, clear main item prices automatically
+        if has_variants:
+            data['actual_price'] = None
+            data['offer_price'] = None
+        else:
+            # If no variants, price must be provided for the main item
+            actual_price = data.get('actual_price', getattr(self.instance, 'actual_price', None))
+            offer_price = data.get('offer_price', getattr(self.instance, 'offer_price', None))
+            if actual_price is None and offer_price is None:
+                raise serializers.ValidationError({
+                    "actual_price": "Price is required for items without variants."
+                })
+
+        # 🌟 2. Section Limits Validation
         SECTION_LIMITS = {
             'BEST SELLER': 10,
             'BANNER': 4,
