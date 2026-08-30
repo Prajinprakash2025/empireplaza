@@ -1,25 +1,34 @@
 from rest_framework import serializers
 from django.db import transaction
-from .models import Category, MenuItem, MenuItemVariant # 🌟 Added MenuItemVariant
+from .models import Category, MenuItem, MenuItemVariant
+
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ['id', 'name', 'image']
 
+
 # ============================================================
-# 🌟 NEW: VARIANT SERIALIZER
+# 🌟 VARIANT SERIALIZER
 # ============================================================
 class MenuItemVariantSerializer(serializers.ModelSerializer):
     class Meta:
         model = MenuItemVariant
         fields = ['id', 'size_name', 'actual_price', 'offer_price', 'quantity', 'is_available']
+        extra_kwargs = {
+            'quantity': {'required': False, 'default': 0}  # 👈 Optional for restaurants without stock tracking
+        }
 
+
+# ============================================================
+# 🌟 MAIN MENU ITEM SERIALIZER
+# ============================================================
 class MenuItemSerializer(serializers.ModelSerializer):
     # This keeps the category name visible
     category_name = serializers.ReadOnlyField(source='category.name') 
     
-    # 🌟 NEW: This grabs all related variants and attaches them to the main item
+    # Grabs all related variants and attaches them to the main item
     variants = MenuItemVariantSerializer(many=True, required=False)
 
     class Meta:
@@ -42,9 +51,12 @@ class MenuItemSerializer(serializers.ModelSerializer):
             'created_at',
             'variants',
         ]
+        extra_kwargs = {
+            'quantity': {'required': False, 'default': 0}  # 👈 Optional for restaurants without stock tracking
+        }
 
     # ============================================================
-    # 🛑 CUSTOM VALIDATION FOR SECTION LIMITS (Kept exactly as you wrote it!)
+    # 🛑 CUSTOM VALIDATION FOR SECTION LIMITS
     # ============================================================
     def validate(self, data):
         section = data.get('section')
@@ -76,7 +88,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
         return data
 
     # ============================================================
-    # 🌟 NEW: CUSTOM CREATE TO SAVE ITEM AND VARIANTS TOGETHER
+    # 🌟 CUSTOM CREATE TO SAVE ITEM AND VARIANTS TOGETHER
     # ============================================================
     @transaction.atomic
     def create(self, validated_data):
@@ -93,7 +105,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
         return menu_item
 
     # ============================================================
-    # 🌟 NEW: CUSTOM UPDATE TO HANDLE EDITING VARIANTS
+    # 🌟 CUSTOM UPDATE TO HANDLE EDITING VARIANTS
     # ============================================================
     @transaction.atomic
     def update(self, instance, validated_data):
