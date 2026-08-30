@@ -7,6 +7,12 @@ from .models import Cart, CartItem, Order, OrderItem
 
 
 # ============================================================
+# ⚙️ RESTAURANT CART LIMITS (Spam / Fake Order Protection)
+# ============================================================
+MAX_QUANTITY_PER_ITEM = 20   # Single item max 20 (e.g. Max 20 Biryani)
+MAX_TOTAL_CART_ITEMS = 50    # Cart-il total max 50 items
+
+# ============================================================
 # 🛒 CART ITEM SERIALIZERS
 # ============================================================
 
@@ -102,7 +108,14 @@ class CartReadSerializer(serializers.ModelSerializer):
 class CartItemAddSerializer(serializers.Serializer):
     menu_item_id = serializers.IntegerField()
     variant_id = serializers.IntegerField(required=False, allow_null=True, default=None)
-    quantity = serializers.IntegerField(default=1, min_value=1)
+    quantity = serializers.IntegerField(
+        default=1, 
+        min_value=1, 
+        max_value=MAX_QUANTITY_PER_ITEM,
+        error_messages={
+            "max_value": f"You can only add up to {MAX_QUANTITY_PER_ITEM} items of this product."
+        }
+    )
 
     def validate(self, attrs):
         menu_item_id = attrs.get('menu_item_id')
@@ -128,15 +141,9 @@ class CartItemAddSerializer(serializers.Serializer):
 
             if not variant.is_available:
                 raise serializers.ValidationError({"variant_id": "This size/variant is currently unavailable."})
-
-            if quantity > variant.quantity:
-                raise serializers.ValidationError({"quantity": f"Only {variant.quantity} items available in stock."})
         else:
             if variant_id:
                 raise serializers.ValidationError({"variant_id": "This item does not have variants."})
-
-            if quantity > menu_item.quantity:
-                raise serializers.ValidationError({"quantity": f"Only {menu_item.quantity} items available in stock."})
 
         attrs['menu_item'] = menu_item
         attrs['variant'] = variant
@@ -158,12 +165,11 @@ class CartItemAddSerializer(serializers.Serializer):
         )
 
         if not created:
-            # If already exists in cart, increment quantity
+            # 🛡️ Limit Check: Max quantity per item check
             new_quantity = cart_item.quantity + quantity
-            max_stock = variant.quantity if variant else menu_item.quantity
-            if new_quantity > max_stock:
+            if new_quantity > MAX_QUANTITY_PER_ITEM:
                 raise serializers.ValidationError({
-                    "quantity": f"Cannot add more. Total in cart exceeds available stock ({max_stock})."
+                    "quantity": f"Maximum limit reached! You can only add up to {MAX_QUANTITY_PER_ITEM} of this item."
                 })
             cart_item.quantity = new_quantity
             cart_item.save(update_fields=['quantity', 'updated_at'])
@@ -173,18 +179,19 @@ class CartItemAddSerializer(serializers.Serializer):
 
 
 class CartItemQuantitySerializer(serializers.ModelSerializer):
-    quantity = serializers.IntegerField(min_value=1)
+    quantity = serializers.IntegerField(
+        min_value=1, 
+        max_value=MAX_QUANTITY_PER_ITEM,
+        error_messages={
+            "max_value": f"Maximum limit reached! You can only order up to {MAX_QUANTITY_PER_ITEM} of this item."
+        }
+    )
 
     class Meta:
         model = CartItem
         fields = ['quantity']
 
     def validate_quantity(self, value):
-        instance = self.instance
-        if instance:
-            max_stock = instance.variant.quantity if instance.variant else instance.menu_item.quantity
-            if value > max_stock:
-                raise serializers.ValidationError(f"Only {max_stock} items available in stock.")
         return value
 
 
@@ -246,24 +253,24 @@ class CheckoutSerializer(serializers.Serializer):
         if not cart or not cart.items.exists():
             raise serializers.ValidationError("Your cart is empty. Please add items before checkout.")
 
-        # Stock and Availability verification
+        # Availability verification (Only checking is_available toggle)
         for item in cart.items.all():
             menu_item = item.menu_item
             if not menu_item.is_available:
-                raise serializers.ValidationError(f"'{menu_item.name}' is no longer available.")
+                raise serializers.ValidationError(f"'{menu_item.name}' is currently unavailable.")
 
             if item.variant:
                 if not item.variant.is_available:
-                    raise serializers.ValidationError(f"'{menu_item.name} - {item.variant.size_name}' is no longer available.")
-                if item.quantity > item.variant.quantity:
-                    raise serializers.ValidationError(
-                        f"Stock insufficient for '{menu_item.name} - {item.variant.size_name}'. Available: {item.variant.quantity}"
-                    )
-            else:
-                if item.quantity > menu_item.quantity:
-                    raise serializers.ValidationError(
-                        f"Stock insufficient for '{menu_item.name}'. Available: {menu_item.quantity}"
-                    )
+                    raise serializers.ValidationError(f"'{menu_item.name} - {item.variant.size_name}' is currently unavailable.")
+
+                # -------------------------------------------------------------
+                # 📦 OPTIONAL INVENTORY STOCK CHECK (Uncomment if needed)
+                # -------------------------------------------------------------
+                # if item.quantity > item.variant.quantity:
+                #     raise serializers.ValidationError(f"Stock insufficient for '{menu_item.name}'. Available: {item.variant.quantity}")
+            # else:
+            #     if item.quantity > menu_item.quantity:
+            #         raise serializers.ValidationError(f"Stock insufficient for '{menu_item.name}'. Available: {menu_item.quantity}")
 
         attrs['cart'] = cart
         return attrs
@@ -307,15 +314,17 @@ class CheckoutSerializer(serializers.Serializer):
                 'line_total': line_total,
             })
 
-            # 2. Automatically Deduct Inventory Stock
-            if variant:
-                variant.quantity -= item.quantity
-                variant.save(update_fields=['quantity'])
-            else:
-                menu_item.quantity -= item.quantity
-                menu_item.save(update_fields=['quantity'])
+            # -------------------------------------------------------------
+            # 📦 OPTIONAL INVENTORY STOCK DEDUCTION (Uncomment if needed)
+            # -------------------------------------------------------------
+            # if variant:
+            #     variant.quantity -= item.quantity
+            #     variant.save(update_fields=['quantity'])
+            # else:
+            #     menu_item.quantity -= item.quantity
+            #     menu_item.save(update_fields=['quantity'])
 
-        # 3. Create Main Order
+        # 2. Create Main Order
         order = Order.objects.create(
             user=user,
             customer_name=customer_name,
@@ -327,14 +336,14 @@ class CheckoutSerializer(serializers.Serializer):
             payment_status='pending',
         )
 
-        # 4. Create OrderItems
+        # 3. Create OrderItems
         for item_data in order_items_to_create:
             OrderItem.objects.create(
                 order=order,
                 **item_data
             )
 
-        # 5. Clear Cart after successful order
+        # 4. Clear Cart after successful order
         cart.items.all().delete()
         cart.save(update_fields=['updated_at'])
 
@@ -362,18 +371,14 @@ class CartMergeSerializer(serializers.Serializer):
         for item_data in items_data:
             menu_item_id = item_data.get('menu_item_id')
             variant_id = item_data.get('variant_id')
-            qty = item_data.get('quantity', 1)
+            qty = min(item_data.get('quantity', 1), MAX_QUANTITY_PER_ITEM) # 👈 Capped at MAX
 
-            # 1. Check if MenuItem exists & available
             try:
                 menu_item = MenuItem.objects.get(pk=menu_item_id, is_available=True)
             except MenuItem.DoesNotExist:
-                continue  # Skip unavailable or deleted items
+                continue
 
             variant = None
-            max_stock = menu_item.quantity
-
-            # 2. Check Variant if item has variants
             if menu_item.has_variants:
                 if not variant_id:
                     continue
@@ -383,17 +388,11 @@ class CartMergeSerializer(serializers.Serializer):
                         menu_item=menu_item, 
                         is_available=True
                     )
-                    max_stock = variant.quantity
                 except MenuItemVariant.DoesNotExist:
                     continue
             else:
                 variant = None
 
-            # Skip if out of stock
-            if max_stock <= 0:
-                continue
-
-            # 3. Check if already exists in User DB Cart
             cart_item = CartItem.objects.filter(
                 cart=cart,
                 menu_item=menu_item,
@@ -401,18 +400,15 @@ class CartMergeSerializer(serializers.Serializer):
             ).first()
 
             if cart_item:
-                # Merge quantities (capped at available stock)
-                new_qty = min(cart_item.quantity + qty, max_stock)
-                cart_item.quantity = new_qty
+                # 🛡️ Cap at max allowed limit
+                cart_item.quantity = min(cart_item.quantity + qty, MAX_QUANTITY_PER_ITEM)
                 cart_item.save(update_fields=['quantity', 'updated_at'])
             else:
-                # Add as new item with stock limit check
-                quantity_to_add = min(qty, max_stock)
                 CartItem.objects.create(
                     cart=cart,
                     menu_item=menu_item,
                     variant=variant,
-                    quantity=quantity_to_add
+                    quantity=qty
                 )
 
         cart.save(update_fields=['updated_at'])

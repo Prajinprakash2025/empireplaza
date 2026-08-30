@@ -16,8 +16,7 @@ urlpatterns = [
     path('', include(router.urls)),
 
     path('signup', SignUpView.as_view(), name='user_signup'),           # 👈 Sign Up (Full Name, Phone, Email)
-    path('send-otp', SendOTPView.as_view(), name='send_otp'),           # 👈 Login (Existing Users)
-    path('verify-otp', VerifyOTPView.as_view(), name='verify_otp'),     # 👈 OTP Verification
+
     path('profile', UserProfileView.as_view(), name='user_profile'),
     path('send-otp', SendOTPView.as_view(), name='send_otp'),
     path('verify-otp', VerifyOTPView.as_view(), name='verify_otp'),
