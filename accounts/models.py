@@ -103,3 +103,40 @@ class TableBooking(models.Model):
 
     def __str__(self):
         return f"Booking by {self.customer_name} on {self.booking_date} at {self.booking_time} ({self.status})"
+
+
+
+class Address(models.Model):
+    ADDRESS_TYPE_CHOICES = (
+        ('home', 'Home'),
+        ('work', 'Work'),
+        ('other', 'Other'),
+    )
+
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='addresses'
+    )
+
+    address_type = models.CharField(
+        max_length=20,
+        choices=ADDRESS_TYPE_CHOICES,
+        default='home'
+    )
+
+    full_name = models.CharField(max_length=100)
+    phone_number = models.CharField(max_length=15)
+
+    address_line = models.TextField()
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    pincode = models.CharField(max_length=10)
+
+    is_default = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.address_type}"    

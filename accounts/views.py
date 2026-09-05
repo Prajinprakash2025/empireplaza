@@ -11,6 +11,8 @@ from rest_framework import status, permissions, viewsets
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from django.conf import settings
+from .permissions import IsAdminRole
+from rest_framework.decorators import action
 
 User = get_user_model()
 
@@ -213,6 +215,34 @@ class StaffAndAdminLoginView(APIView):
         return response
 
 
+class CustomerManagementViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAdminRole]
+    serializer_class = AdminUserSerializer
+
+    def get_queryset(self):
+        queryset = User.objects.filter(
+            role='user'
+        ).order_by('-date_joined')
+
+        search = self.request.query_params.get('search', '').strip()
+
+        if search:
+            queryset = queryset.filter(
+                Q(username__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(email__icontains=search) |
+                Q(phone_number__icontains=search)
+            )
+
+        return queryset
+    @action(detail=True, methods=['get'], url_path='addresses')
+    def addresses(self, request, pk=None):
+      customer = self.get_object()
+      addresses = Address.objects.filter(user=customer).order_by('-is_default', '-created_at')
+      serializer = AddressSerializer(addresses, many=True)
+      return Response(serializer.data)
+
 
 
 class CookieTokenRefreshView(APIView):
@@ -276,7 +306,7 @@ class LogoutView(APIView):
     
 from .serializers import (
     SendOTPSerializer, VerifyOTPSerializer, 
-    UserSerializer, AdminUserSerializer, StaffLoginSerializer, StaffCreateSerializer, StaffUpdateSerializer
+    UserSerializer, AdminUserSerializer, StaffLoginSerializer, StaffCreateSerializer, StaffUpdateSerializer,  AddressSerializer
 )
     
 
@@ -425,3 +455,21 @@ class TableBookingViewSet(viewsets.ModelViewSet):
             serializer.save(user=self.request.user)
         else:
             serializer.save()
+
+from .models import Address
+
+class AddressViewSet(viewsets.ModelViewSet):
+    """
+    Logged-in customer can manage their own delivery addresses.
+    """
+
+    serializer_class = AddressSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Address.objects.filter(
+            user=self.request.user
+        ).order_by('-is_default', '-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)

@@ -1,6 +1,7 @@
 from django.urls import path, include
-from .views import SendOTPView, SignUpView, UserProfileView, VerifyOTPView, LogoutView, CookieTokenRefreshView, StaffAndAdminLoginView, StaffManagementViewSet,DeliveryBoyManagementViewSet, DeliveryBoyLoginView,ContactMessageViewSet,TableBookingViewSet
+from .views import SendOTPView, SignUpView, UserProfileView, VerifyOTPView, LogoutView, CookieTokenRefreshView, StaffAndAdminLoginView, StaffManagementViewSet,DeliveryBoyManagementViewSet, DeliveryBoyLoginView,ContactMessageViewSet,TableBookingViewSet,CustomerManagementViewSet
 from rest_framework.routers import DefaultRouter
+from .views import AddressViewSet
 
 
 router = DefaultRouter(trailing_slash=False)
@@ -8,6 +9,16 @@ router.register(r'admin/staff', StaffManagementViewSet, basename='staff_manageme
 router.register(r'admin/delivery-boys', DeliveryBoyManagementViewSet, basename='delivery_boy_management')
 router.register(r'contact', ContactMessageViewSet, basename='contact_messages')
 router.register(r'table-bookings', TableBookingViewSet, basename='table_bookings')
+router.register(r'admin/customers',CustomerManagementViewSet,basename='customer_management')
+router.register(r'addresses',AddressViewSet, basename='addresses')
+    
+    
+   
+
+    
+    
+    
+
 
 
 

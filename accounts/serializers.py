@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import CustomUser, DeliveryBoyProfile
+from .models import CustomUser, DeliveryBoyProfile,Address
 
 
 User = get_user_model()
@@ -173,3 +173,22 @@ class TableBookingAdminUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = TableBooking
         fields = ['status']
+
+
+class AddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        fields = [
+            'id',
+            'address_type',
+            'full_name',
+            'phone_number',
+            'address_line',
+            'city',
+            'state',
+            'pincode',
+            'is_default',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
