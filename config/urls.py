@@ -10,7 +10,9 @@ urlpatterns = [
     path('api/menu/', include('menu.urls')),
     path('api/orders/', include('orders.urls')),
     # path('api/delivery/', include('delivery.urls')),
-    path('api/home/', include('home.urls'))
+    path('api/home/', include('home.urls')),
+    path('api/settings/', include('settings.urls')),
+    path('api/faq/', include('faq.urls')),
 
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
