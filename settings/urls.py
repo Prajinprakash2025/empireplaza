@@ -4,7 +4,7 @@ from .views import SiteSettingRetrieveUpdateView
 
 urlpatterns = [
     path(
-        'site-settings/',
+        'site-settings',
         SiteSettingRetrieveUpdateView.as_view(),
         name='site-settings'
     ),
