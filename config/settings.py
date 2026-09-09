@@ -50,7 +50,10 @@ INSTALLED_APPS = [
     'accounts',
     'menu',
     'orders',
-    'delivery','settings','faq',
+    'delivery',
+    'settings',
+    'faq',
+    'feedback',
 ]
 
 MIDDLEWARE = [

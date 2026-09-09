@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from menu.models import MenuItem, MenuItemVariant
 from .models import Cart, CartItem, Order, OrderItem
+from accounts.models import Address
 
 
 # ============================================================
@@ -240,68 +241,152 @@ class OrderStatusUpdateSerializer(serializers.ModelSerializer):
         fields = ['status', 'payment_status']
 
 
+from decimal import Decimal
+from django.db import transaction
+from rest_framework import serializers
+
+from accounts.models import Address
+from menu.models import MenuItem, MenuItemVariant
+from .models import Cart, CartItem, Order, OrderItem
+
+
 class CheckoutSerializer(serializers.Serializer):
-    customer_name = serializers.CharField(max_length=150)
-    customer_phone = serializers.CharField(max_length=15)
-    delivery_address = serializers.CharField()
-    special_instructions = serializers.CharField(required=False, allow_blank=True, default='')
+
+    address_id = serializers.IntegerField()
+
+    special_instructions = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default=''
+    )
 
     def validate(self, attrs):
+
         user = self.context['request'].user
-        cart = Cart.objects.filter(user=user).prefetch_related('items__menu_item', 'items__variant').first()
+
+        # -----------------------------------------
+        # 1. CHECK SELECTED ADDRESS
+        # -----------------------------------------
+
+        try:
+            address = Address.objects.get(
+                id=attrs['address_id'],
+                user=user
+            )
+        except Address.DoesNotExist:
+            raise serializers.ValidationError({
+                'address_id': 'Invalid address selected.'
+            })
+
+        # -----------------------------------------
+        # 2. GET USER CART
+        # -----------------------------------------
+
+        cart = Cart.objects.filter(
+            user=user
+        ).prefetch_related(
+            'items__menu_item',
+            'items__variant'
+        ).first()
 
         if not cart or not cart.items.exists():
-            raise serializers.ValidationError("Your cart is empty. Please add items before checkout.")
+            raise serializers.ValidationError(
+                "Your cart is empty. Please add items before checkout."
+            )
 
-        # Availability verification (Only checking is_available toggle)
+        # -----------------------------------------
+        # 3. CHECK ITEM AVAILABILITY
+        # -----------------------------------------
+
         for item in cart.items.all():
+
             menu_item = item.menu_item
+
             if not menu_item.is_available:
-                raise serializers.ValidationError(f"'{menu_item.name}' is currently unavailable.")
+                raise serializers.ValidationError(
+                    f"'{menu_item.name}' is currently unavailable."
+                )
 
             if item.variant:
+
                 if not item.variant.is_available:
-                    raise serializers.ValidationError(f"'{menu_item.name} - {item.variant.size_name}' is currently unavailable.")
+                    raise serializers.ValidationError(
+                        f"'{menu_item.name} - "
+                        f"{item.variant.size_name}' "
+                        "is currently unavailable."
+                    )
 
-                # -------------------------------------------------------------
-                # 📦 OPTIONAL INVENTORY STOCK CHECK (Uncomment if needed)
-                # -------------------------------------------------------------
-                # if item.quantity > item.variant.quantity:
-                #     raise serializers.ValidationError(f"Stock insufficient for '{menu_item.name}'. Available: {item.variant.quantity}")
-            # else:
-            #     if item.quantity > menu_item.quantity:
-            #         raise serializers.ValidationError(f"Stock insufficient for '{menu_item.name}'. Available: {menu_item.quantity}")
-
+        attrs['address'] = address
         attrs['cart'] = cart
+
         return attrs
 
     @transaction.atomic
     def create(self, validated_data):
+
         user = self.context['request'].user
+
         cart = validated_data.pop('cart')
+        address = validated_data.pop('address')
 
-        customer_name = validated_data['customer_name']
-        customer_phone = validated_data['customer_phone']
-        delivery_address = validated_data['delivery_address']
-        special_instructions = validated_data.get('special_instructions', '')
+        special_instructions = validated_data.get(
+            'special_instructions',
+            ''
+        )
 
-        # 1. Calculate Total & Prepare Order Items
+        # -----------------------------------------
+        # 4. CREATE ADDRESS SNAPSHOT
+        # -----------------------------------------
+
+        customer_name = address.full_name
+        customer_phone = address.phone_number
+
+        delivery_address = (
+            f"{address.full_name}, "
+            f"{address.address_line}, "
+            f"{address.city}, "
+            f"{address.state} - "
+            f"{address.pincode}"
+        )
+
+        # -----------------------------------------
+        # 5. CALCULATE TOTAL
+        # -----------------------------------------
+
         total_price = Decimal('0.00')
+
         order_items_to_create = []
 
-        for item in cart.items.select_related('menu_item', 'variant').all():
+        for item in cart.items.select_related(
+            'menu_item',
+            'variant'
+        ).all():
+
             menu_item = item.menu_item
             variant = item.variant
 
             if variant:
-                unit_price = variant.offer_price if variant.offer_price is not None else variant.actual_price
+                unit_price = (
+                    variant.offer_price
+                    if variant.offer_price is not None
+                    else variant.actual_price
+                )
+
                 variant_name = variant.size_name
+
             else:
-                unit_price = menu_item.offer_price if menu_item.offer_price is not None else menu_item.actual_price
+                unit_price = (
+                    menu_item.offer_price
+                    if menu_item.offer_price is not None
+                    else menu_item.actual_price
+                )
+
                 variant_name = ''
 
             unit_price = Decimal(str(unit_price))
+
             line_total = unit_price * item.quantity
+
             total_price += line_total
 
             order_items_to_create.append({
@@ -314,17 +399,10 @@ class CheckoutSerializer(serializers.Serializer):
                 'line_total': line_total,
             })
 
-            # -------------------------------------------------------------
-            # 📦 OPTIONAL INVENTORY STOCK DEDUCTION (Uncomment if needed)
-            # -------------------------------------------------------------
-            # if variant:
-            #     variant.quantity -= item.quantity
-            #     variant.save(update_fields=['quantity'])
-            # else:
-            #     menu_item.quantity -= item.quantity
-            #     menu_item.save(update_fields=['quantity'])
+        # -----------------------------------------
+        # 6. CREATE ORDER
+        # -----------------------------------------
 
-        # 2. Create Main Order
         order = Order.objects.create(
             user=user,
             customer_name=customer_name,
@@ -336,19 +414,28 @@ class CheckoutSerializer(serializers.Serializer):
             payment_status='pending',
         )
 
-        # 3. Create OrderItems
+        # -----------------------------------------
+        # 7. CREATE ORDER ITEMS
+        # -----------------------------------------
+
         for item_data in order_items_to_create:
+
             OrderItem.objects.create(
                 order=order,
                 **item_data
             )
 
-        # 4. Clear Cart after successful order
+        # -----------------------------------------
+        # 8. CLEAR CART
+        # -----------------------------------------
+
         cart.items.all().delete()
-        cart.save(update_fields=['updated_at'])
+
+        cart.save(
+            update_fields=['updated_at']
+        )
 
         return order
-
 
 # ============================================================
 # 🔄 GUEST CART TO USER CART MERGE SERIALIZER

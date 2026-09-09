@@ -12,6 +12,7 @@ urlpatterns = [
     # path('api/delivery/', include('delivery.urls')),
     path('api/settings/', include('settings.urls')),
     path('api/faq/', include('faq.urls')),
+    path('api/feedback/', include('feedback.urls')),
 
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
