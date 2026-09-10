@@ -38,7 +38,6 @@ class MenuItemSerializer(serializers.ModelSerializer):
             'name',
             'description',
             'image',
-            'banner_image',
             'dietary_preference',
             'has_variants',
             'actual_price',
