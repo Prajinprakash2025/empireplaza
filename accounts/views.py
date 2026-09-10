@@ -156,8 +156,6 @@ class VerifyOTPView(APIView):
         response = Response({
             "status": True,
             "message": "OTP verified successfully",
-            "access_token": str(refresh.access_token),
-            "refresh_token": str(refresh),
             "user": UserSerializer(user).data
         }, status=status.HTTP_200_OK)
 
