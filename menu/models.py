@@ -34,7 +34,6 @@ class MenuItem(models.Model):
     name = models.CharField(max_length=255, verbose_name="Product Name")
     description = models.TextField(blank=True, null=True)
     image = models.ImageField(upload_to='menu_images/', blank=True, null=True, verbose_name="Product Image")
-    banner_image = models.ImageField(upload_to='banner_images/', blank=True, null=True, verbose_name="Banner Image")
     dietary_preference = models.CharField(max_length=10, choices=DIETARY_CHOICES, default='VEG')
     
     # 🌟 NEW FIELD: Sizes undo illayo ennu ariyikkan

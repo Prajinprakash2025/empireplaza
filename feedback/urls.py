@@ -22,7 +22,7 @@ urlpatterns = [
 
     # Public
     path(
-        '',
+        'reviews',
         ReviewListView.as_view(),
         name='review-list'
     ),

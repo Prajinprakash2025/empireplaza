@@ -38,7 +38,6 @@ class MenuItemSerializer(serializers.ModelSerializer):
             'name',
             'description',
             'image',
-            'banner_image',
             'dietary_preference',
             'has_variants',
             'actual_price',
@@ -70,10 +69,10 @@ class MenuItemSerializer(serializers.ModelSerializer):
 
         # 🌟 2. Section Limits Validation
         SECTION_LIMITS = {
-            'BEST SELLER': 10,
+            'BEST SELLER': 12,
             'BANNER': 4,
-            'COMBO MENU': 9,
-            "TODAY'S SPECIAL": 6,
+            'COMBO MENU': 6,
+            "TODAY'S SPECIAL": 8,
         }
 
         if section in SECTION_LIMITS:
