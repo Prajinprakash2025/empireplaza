@@ -425,13 +425,22 @@ from rest_framework.throttling import AnonRateThrottle
 class ContactFormThrottle(AnonRateThrottle):
     rate = '5/hour'
 
+class ContactMessagePagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class ContactMessageViewSet(viewsets.ModelViewSet):
     """
     Public users can send message (POST).
     Only Admins can view (GET) and delete (DELETE) messages.
     """
-    queryset = ContactMessage.objects.all().order_by('-created_at')
-    throttle_classes = [ContactFormThrottle]
+    pagination_class = ContactMessagePagination
+
+    def get_throttles(self):
+        if self.action == 'create':
+            return [ContactFormThrottle()]
+        return []
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -442,6 +451,29 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             return [permissions.AllowAny()]
         return [IsAdminRole()]
+
+    def get_queryset(self):
+        queryset = ContactMessage.objects.all().order_by('-created_at')
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) |
+                Q(email__icontains=search) |
+                Q(phone_number__icontains=search) |
+                Q(subject__icontains=search) |
+                Q(message__icontains=search)
+            )
+        status_filter = self.request.query_params.get('status', '').strip().lower()
+        if status_filter == 'unread':
+            queryset = queryset.filter(is_read=False)
+        elif status_filter == 'read':
+            queryset = queryset.filter(is_read=True)
+        return queryset
+
+    @action(detail=False, methods=['get'], url_path='unread-count')
+    def unread_count(self, request):
+        count = ContactMessage.objects.filter(is_read=False).count()
+        return Response({"unread_count": count})
 
 from .models import TableBooking
 from .serializers import TableBookingSerializer, TableBookingAdminUpdateSerializer
