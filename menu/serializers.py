@@ -47,6 +47,19 @@ class MenuItemSerializer(serializers.ModelSerializer):
             'variants',
         ]
 
+    # 🌟 multipart/form-data വഴി വരുന്ന string-നെ യഥാർത്ഥ list ആക്കി മാറ്റുന്നു
+    def to_internal_value(self, data):
+        import json
+        if hasattr(data, 'copy'):
+            data = data.copy()
+        variants = data.get('variants')
+        if isinstance(variants, str):
+            try:
+                data['variants'] = json.loads(variants)
+            except Exception:
+                pass
+        return super().to_internal_value(data)
+
     # ============================================================
     # 🛑 CUSTOM VALIDATION FOR PRICES & SECTION LIMITS
     # ============================================================
