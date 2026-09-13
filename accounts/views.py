@@ -224,7 +224,20 @@ class CustomerPagination(PageNumberPagination):
 class CustomerManagementViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAdminRole]
     serializer_class = AdminUserSerializer
-    pagination_class = CustomerPagination  # 👈 10 items per page
+    pagination_class = CustomerPagination
+
+    # 🌟 NEW: Toggle Customer Block/Unblock
+    @action(detail=True, methods=['patch'], url_path='toggle-block')
+    def toggle_block(self, request, pk=None):
+        customer = self.get_object()
+        customer.is_active = not customer.is_active
+        customer.save(update_fields=['is_active'])
+        status_text = "unblocked" if customer.is_active else "blocked"
+        return Response({
+            "status": True,
+            "message": f"Customer has been {status_text} successfully.",
+            "is_active": customer.is_active
+        }, status=status.HTTP_200_OK)  # 👈 10 items per page
 
     def get_queryset(self):
         queryset = User.objects.filter(
