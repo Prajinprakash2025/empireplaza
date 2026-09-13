@@ -30,11 +30,11 @@ class SignUpView(APIView):
         email = serializer.validated_data.get('email') or ''
         # Generate 6-digit OTP
         otp_code = str(random.randint(100000, 999999))
-        # Create or update user details
+        # Create or update user details (username crash aavathirikkan phone_number vechu unique aakkunnu)
         user, created = User.objects.get_or_create(
             phone_number=phone_number,
             defaults={
-                'username': full_name,
+                'username': f"user_{phone_number}",
                 'first_name': full_name,
                 'email': email,
                 'role': 'user',
@@ -42,9 +42,10 @@ class SignUpView(APIView):
         )
         # If user existed as unverified, update their latest name and email
         if not created:
-            user.username = full_name
             user.first_name = full_name
             user.email = email
+            if not user.username:
+                user.username = f"user_{phone_number}"
         user.otp = otp_code
         user.otp_created_at = timezone.now()
         user.is_verified = False
