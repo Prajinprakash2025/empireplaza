@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import SendOTPSerializer, VerifyOTPSerializer, UserSerializer, AdminUserSerializer,SignUpSerializer
 from rest_framework import status, permissions, viewsets
+from rest_framework.pagination import PageNumberPagination
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from django.conf import settings
@@ -214,9 +215,16 @@ class StaffAndAdminLoginView(APIView):
         return response
 
 
+# 🌟 Pagination: 10 customers per page
+class CustomerPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class CustomerManagementViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAdminRole]
     serializer_class = AdminUserSerializer
+    pagination_class = CustomerPagination  # 👈 10 items per page
 
     def get_queryset(self):
         queryset = User.objects.filter(
