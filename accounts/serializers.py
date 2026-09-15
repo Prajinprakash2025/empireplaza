@@ -33,10 +33,7 @@ class VerifyOTPSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=15)
     otp = serializers.CharField(max_length=6)
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'phone_number', 'role', 'address', 'is_verified']
+
 
 class AdminUserSerializer(serializers.ModelSerializer):
     class Meta:
