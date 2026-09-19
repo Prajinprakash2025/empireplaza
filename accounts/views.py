@@ -100,18 +100,14 @@ class SendOTPView(APIView):
         # Generate a random 6-digit OTP
         otp_code = str(random.randint(100000, 999999))
         
-        # Get or create the user
-        user, created = User.objects.get_or_create(
-            phone_number=phone_number,
-            defaults={
-                'username': username,
-                'role': role
-            }
-        )
-        
-        # Update user's role if they register with a different role initially
-        if created and role != 'user':
-            user.role = role
+        # Check if user already exists
+        try:
+            user = User.objects.get(phone_number=phone_number)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "No account found with this phone number. Please Sign Up first."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
         # Save OTP details to database
         user.otp = otp_code
