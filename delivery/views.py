@@ -139,3 +139,104 @@ class CompleteDeliveryView(APIView):
             pass
 
         return Response(DeliverySerializer(delivery).data)
+
+
+class CurrentDeliveryView(APIView):
+    """
+    Get the currently active delivery assigned to the logged-in delivery boy.
+    """
+    permission_classes = [IsDeliveryBoy]
+
+    def get(self, request):
+        delivery = Delivery.objects.filter(
+            delivery_boy=request.user,
+            status='assigned'
+        ).select_related('order').first()
+
+        if not delivery:
+            return Response({"active_delivery": None})
+
+        return Response({
+            "active_delivery": DeliverySerializer(delivery).data
+        })
+
+
+class DeliveryHistoryView(APIView):
+    """
+    Get past completed deliveries for the logged-in delivery boy.
+    """
+    permission_classes = [IsDeliveryBoy]
+
+    def get(self, request):
+        deliveries = Delivery.objects.filter(
+            delivery_boy=request.user,
+            status='delivered'
+        ).select_related('order').order_by('-delivered_at')[:50]
+
+        return Response(DeliverySerializer(deliveries, many=True).data)
+
+
+class ToggleDutyView(APIView):
+    """
+    Toggle on/off duty status for the logged-in delivery boy.
+    """
+    permission_classes = [IsDeliveryBoy]
+
+    def post(self, request):
+        try:
+            profile = request.user.delivery_profile
+        except Exception:
+            from accounts.models import DeliveryBoyProfile
+            profile, _ = DeliveryBoyProfile.objects.get_or_create(user=request.user)
+
+        if profile.is_busy and profile.is_on_duty:
+            return Response(
+                {"error": "Cannot go offline while you have an active delivery in progress!"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        profile.is_on_duty = not profile.is_on_duty
+        profile.save(update_fields=['is_on_duty'])
+
+        return Response({
+            "status": True,
+            "is_on_duty": profile.is_on_duty,
+            "message": f"You are now {'ONLINE' if profile.is_on_duty else 'OFFLINE'}."
+        })
+
+
+class DeliveryProfileView(APIView):
+    """
+    Get profile information, vehicle info, and stats for the delivery boy.
+    """
+    permission_classes = [IsDeliveryBoy]
+
+    def get(self, request):
+        user = request.user
+        try:
+            profile = user.delivery_profile
+        except Exception:
+            from accounts.models import DeliveryBoyProfile
+            profile, _ = DeliveryBoyProfile.objects.get_or_create(user=user)
+
+        total_delivered = Delivery.objects.filter(delivery_boy=user, status='delivered').count()
+        today = timezone.now().date()
+        today_delivered = Delivery.objects.filter(
+            delivery_boy=user,
+            status='delivered',
+            delivered_at__date=today
+        ).count()
+
+        return Response({
+            "id": user.id,
+            "employee_id": user.employee_id or f"DB-{user.id:03d}",
+            "username": user.username,
+            "name": user.get_full_name() or user.username,
+            "phone_number": user.phone_number,
+            "email": user.email or "",
+            "vehicle_number": profile.vehicle_number or "Not Set",
+            "is_on_duty": profile.is_on_duty,
+            "is_busy": profile.is_busy,
+            "total_delivered": total_delivered,
+            "today_delivered": today_delivered,
+        })
