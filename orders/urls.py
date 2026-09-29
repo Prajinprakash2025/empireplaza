@@ -14,9 +14,10 @@ urlpatterns = [
     path('my-orders/<int:pk>', views.CustomerOrderDetailView.as_view(), name='customer-order-detail'),
     path('my-orders/<int:pk>/cancel', views.CustomerOrderCancelView.as_view(), name='customer-order-cancel'),
 
-    # --- 👨‍💼 STAFF / ADMIN ORDER MANAGEMENT ---
+    # --- 👨‍💼 STAFF / ADMIN ORDER MANAGEMENT & ANALYTICS ---
     path('staff/orders', views.StaffOrderListView.as_view(), name='staff-order-list'),
     path('staff/orders/<int:pk>/status', views.StaffOrderStatusUpdateView.as_view(), name='staff-order-status-update'),
+    path('staff/dashboard-analytics', views.StaffDashboardAnalyticsView.as_view(), name='staff-dashboard-analytics'),
 
     path('cart/merge', views.CartMergeView.as_view(), name='cart-merge'),  # 👈 🌟 NEW MERGE ROUTE
 

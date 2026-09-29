@@ -217,6 +217,23 @@ class OrderItemReadSerializer(serializers.ModelSerializer):
 
 class OrderReadSerializer(serializers.ModelSerializer):
     items = OrderItemReadSerializer(many=True, read_only=True)
+    delivery_boy = serializers.SerializerMethodField()
+
+    def get_delivery_boy(self, obj):
+        try:
+            if hasattr(obj, 'delivery_details') and obj.delivery_details:
+                boy = obj.delivery_details.delivery_boy
+                name = (boy.get_full_name() or boy.username or boy.phone_number).strip()
+                return {
+                    'id': boy.id,
+                    'name': name,
+                    'phone': boy.phone_number,
+                    'employee_id': getattr(boy, 'employee_id', None),
+                    'status': obj.delivery_details.status,
+                }
+        except Exception:
+            pass
+        return None
 
     class Meta:
         model = Order
@@ -230,6 +247,7 @@ class OrderReadSerializer(serializers.ModelSerializer):
             'status',
             'payment_status',
             'items',
+            'delivery_boy',
             'created_at',
             'updated_at',
         ]
@@ -410,7 +428,7 @@ class CheckoutSerializer(serializers.Serializer):
             delivery_address=delivery_address,
             special_instructions=special_instructions,
             total_price=total_price,
-            status='pending',
+            status='preparing',
             payment_status='pending',
         )
 
