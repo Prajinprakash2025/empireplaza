@@ -159,17 +159,21 @@ REST_FRAMEWORK = {
     ),
 }
 
-# SimpleJWT Settings
+# SimpleJWT Settings (Keeps user/admin/delivery logged in for 30 full days!)
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=60),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+# 30-day persistence for Django sessions and cookies
+SESSION_COOKIE_AGE = 30 * 24 * 60 * 60  # 2,592,000 seconds (30 days)
+
 
 # Media files setup (for food images)
 import os

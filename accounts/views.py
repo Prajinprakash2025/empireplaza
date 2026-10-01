@@ -17,6 +17,10 @@ from rest_framework.decorators import action
 
 User = get_user_model()
 
+# 🌟 30-Day Persistent Cookie Lifetime (2,592,000 seconds)
+JWT_COOKIE_MAX_AGE = 30 * 24 * 60 * 60
+
+
 
 
 # 2. 🌟 NEW: Customer Sign Up View (Full Name, Phone, Email vangi OTP send cheyyunnu):
@@ -157,9 +161,26 @@ class VerifyOTPView(APIView):
             "user": UserSerializer(user).data
         }, status=status.HTTP_200_OK)
 
-        # Set HttpOnly Cookies
-        response.set_cookie(key='access_token', value=str(refresh.access_token), httponly=True, samesite='Lax', secure=False)
-        response.set_cookie(key='refresh_token', value=str(refresh), httponly=True, samesite='Lax', secure=False)
+        # Set Persistent HttpOnly Cookies (30 days validity)
+        response.set_cookie(
+            key='access_token',
+            value=str(refresh.access_token),
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=True,
+            samesite='Lax',
+            secure=False
+        )
+        response.set_cookie(
+            key='refresh_token',
+            value=str(refresh),
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=True,
+            samesite='Lax',
+            secure=False
+        )
+
 
         return response
 
@@ -204,9 +225,26 @@ class StaffAndAdminLoginView(APIView):
             "user": AdminUserSerializer(user).data
         }, status=status.HTTP_200_OK)
 
-        # Set HttpOnly Cookies
-        response.set_cookie(key='access_token', value=str(refresh.access_token), httponly=True, samesite='Lax', secure=False)
-        response.set_cookie(key='refresh_token', value=str(refresh), httponly=True, samesite='Lax', secure=False)
+        # Set Persistent HttpOnly Cookies (30 days validity)
+        response.set_cookie(
+            key='access_token',
+            value=str(refresh.access_token),
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=True,
+            samesite='Lax',
+            secure=False
+        )
+        response.set_cookie(
+            key='refresh_token',
+            value=str(refresh),
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=True,
+            samesite='Lax',
+            secure=False
+        )
+
 
         return response
 
@@ -280,10 +318,12 @@ class CookieTokenRefreshView(APIView):
 
             response = Response({"message": "Token refreshed successfully"}, status=status.HTTP_200_OK)
 
-            # Set fresh access_token cookie
+            # Set fresh access_token cookie (30 days validity)
             response.set_cookie(
                 key='access_token',
                 value=new_access_token,
+                max_age=JWT_COOKIE_MAX_AGE,
+                path='/',
                 httponly=True,
                 samesite='Lax',
                 secure=False
@@ -296,10 +336,13 @@ class CookieTokenRefreshView(APIView):
                 response.set_cookie(
                     key='refresh_token',
                     value=str(refresh),
+                    max_age=JWT_COOKIE_MAX_AGE,
+                    path='/',
                     httponly=True,
                     samesite='Lax',
                     secure=False
                 )
+
 
             return response
 
@@ -409,8 +452,26 @@ class DeliveryBoyLoginView(APIView):
             "user": DeliveryBoyUserSerializer(user).data
         }, status=status.HTTP_200_OK)
 
-        response.set_cookie(key='access_token', value=str(refresh.access_token), httponly=True, samesite='Lax', secure=False)
-        response.set_cookie(key='refresh_token', value=str(refresh), httponly=True, samesite='Lax', secure=False)
+        # Set Persistent HttpOnly Cookies (30 days validity)
+        response.set_cookie(
+            key='access_token',
+            value=str(refresh.access_token),
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=True,
+            samesite='Lax',
+            secure=False
+        )
+        response.set_cookie(
+            key='refresh_token',
+            value=str(refresh),
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=True,
+            samesite='Lax',
+            secure=False
+        )
+
 
         return response
 
