@@ -52,12 +52,18 @@ class MenuItemSerializer(serializers.ModelSerializer):
         import json
         if hasattr(data, 'copy'):
             data = data.copy()
-        variants = data.get('variants')
-        if isinstance(variants, str):
-            try:
-                data['variants'] = json.loads(variants)
-            except Exception:
-                pass
+
+        # 🌟 Item-ന് variants ഇല്ലെങ്കിൽ വെറുതെ വരുന്ന dummy variants ലിസ്റ്റ് ക്ലിയർ ചെയ്യുക
+        has_variants = data.get('has_variants', getattr(self.instance, 'has_variants', False) if self.instance else False)
+        if has_variants in (False, 'false', 'False', 0, '0'):
+            data['variants'] = []
+        else:
+            variants = data.get('variants')
+            if isinstance(variants, str):
+                try:
+                    data['variants'] = json.loads(variants)
+                except Exception:
+                    pass
         return super().to_internal_value(data)
 
     # ============================================================
@@ -128,7 +134,9 @@ class MenuItemSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
 
-        if variants_data is not None:
+        if not instance.has_variants:
+            instance.variants.all().delete()
+        elif variants_data is not None:
             instance.variants.all().delete()
             for variant_data in variants_data:
                 MenuItemVariant.objects.create(menu_item=instance, **variant_data)
