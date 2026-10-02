@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from accounts.permissions import IsDeliveryBoy
 from orders.models import Order
 from orders.serializers import OrderReadSerializer
+from orders.pusher_utils import trigger_order_event
 from .models import Delivery
 from .serializers import DeliverySerializer
 
@@ -93,6 +94,9 @@ class AcceptDeliveryView(APIView):
         profile.is_busy = True
         profile.save(update_fields=['is_busy'])
 
+        # 🌟 Realtime Broadcast: Order status changed to Out for Delivery
+        trigger_order_event('order-status-updated', OrderReadSerializer(order).data)
+
         return Response(
             DeliverySerializer(delivery).data,
             status=status.HTTP_201_CREATED
@@ -137,6 +141,9 @@ class CompleteDeliveryView(APIView):
             profile.save(update_fields=['is_busy'])
         except Exception:
             pass
+
+        # 🌟 Realtime Broadcast: Order status changed to Delivered
+        trigger_order_event('order-status-updated', OrderReadSerializer(order).data)
 
         return Response(DeliverySerializer(delivery).data)
 

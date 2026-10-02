@@ -16,6 +16,7 @@ from .permissions import IsAdminRole
 from rest_framework.decorators import action
 
 User = get_user_model()
+from .sms_utils import send_2factor_otp
 
 # 🌟 30-Day Persistent Cookie Lifetime (2,592,000 seconds)
 JWT_COOKIE_MAX_AGE = 30 * 24 * 60 * 60
@@ -55,7 +56,11 @@ class SignUpView(APIView):
         user.otp_created_at = timezone.now()
         user.is_verified = False
         user.save()
+
+        # 📲 Send Real SMS via 2Factor.in
+        send_2factor_otp(phone_number, otp_code)
         print(f"--- SIGNUP OTP for {phone_number} is {otp_code} ---")
+
         return Response({
             "status": True,
             "message": "Account details saved. OTP sent successfully for verification.",
@@ -119,8 +124,8 @@ class SendOTPView(APIView):
         user.is_verified = False
         user.save()
 
-        # In production: Send SMS here.
-        # For development: Print to console and return in API response
+        # 📲 Send Real SMS via 2Factor.in
+        send_2factor_otp(phone_number, otp_code)
         print(f"--- OTP for {phone_number} is {otp_code} ---")
         
         return Response({

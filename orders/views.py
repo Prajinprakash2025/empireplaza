@@ -25,8 +25,8 @@ from .serializers import (
     OrderReadSerializer,
     OrderStatusUpdateSerializer,
     CartMergeSerializer,   # 👈 Add this
-
 )
+from .pusher_utils import trigger_order_event
 
 
 class OrderPagination(PageNumberPagination):
@@ -182,14 +182,18 @@ class CheckoutView(APIView):
         serializer.is_valid(raise_exception=True)
         order = serializer.save()
 
+        order_data = OrderReadSerializer(
+            order,
+            context={'request': request},
+        ).data
+
+        trigger_order_event('new-order', order_data)
+
         return Response(
             {
                 'status': True,
                 'message': 'Order placed successfully.',
-                'data': OrderReadSerializer(
-                    order,
-                    context={'request': request},
-                ).data,
+                'data': order_data,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -257,13 +261,17 @@ class CustomerOrderCancelView(APIView):
         serializer.is_valid(raise_exception=True)
         updated_order = serializer.save()
 
+        order_data = OrderReadSerializer(
+            updated_order,
+            context={'request': request},
+        ).data
+
+        trigger_order_event('order-status-updated', order_data)
+
         return Response({
             'status': True,
             'message': 'Order cancelled successfully.',
-            'data': OrderReadSerializer(
-                updated_order,
-                context={'request': request},
-            ).data,
+            'data': order_data,
         })
 
 
@@ -361,13 +369,17 @@ class StaffOrderStatusUpdateView(APIView):
         serializer.is_valid(raise_exception=True)
         updated_order = serializer.save()
 
+        order_data = OrderReadSerializer(
+            updated_order,
+            context={'request': request},
+        ).data
+
+        trigger_order_event('order-status-updated', order_data)
+
         return Response({
             'status': True,
             'message': 'Order status updated successfully.',
-            'data': OrderReadSerializer(
-                updated_order,
-                context={'request': request},
-            ).data,
+            'data': order_data,
         })
 
 

@@ -182,3 +182,12 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 
 APPEND_SLASH = False
+
+# Pusher Realtime Configuration
+PUSHER_APP_ID = os.getenv('PUSHER_APP_ID', '2199166')
+PUSHER_KEY = os.getenv('PUSHER_KEY', '090ea1adb4d94c205f51')
+PUSHER_SECRET = os.getenv('PUSHER_SECRET', 'd401e8846601e0b63120')
+PUSHER_CLUSTER = os.getenv('PUSHER_CLUSTER', 'ap2')
+
+# 2Factor SMS OTP Configuration
+TWOFACTOR_API_KEY = os.getenv('TWOFACTOR_API_KEY', 'b6e4bcf9-bdc3-11f1-af74-0200cd936042')
