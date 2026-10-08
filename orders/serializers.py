@@ -31,6 +31,14 @@ class CartMenuItemMinimalSerializer(serializers.ModelSerializer):
             'is_available',
         ]
 
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if instance.image:
+            from django.conf import settings
+            base_url = getattr(settings, 'PUBLIC_MEDIA_URL', 'http://187.127.167.18').rstrip('/')
+            ret['image'] = f"{base_url}{instance.image.url}"
+        return ret
+
 
 class CartVariantMinimalSerializer(serializers.ModelSerializer):
     class Meta:

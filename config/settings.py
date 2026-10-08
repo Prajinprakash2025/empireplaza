@@ -192,6 +192,7 @@ SESSION_COOKIE_AGE = 30 * 24 * 60 * 60  # 2,592,000 seconds (30 days)
 import os
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+PUBLIC_MEDIA_URL = os.getenv('PUBLIC_MEDIA_URL', 'http://187.127.167.18')
 
 
 APPEND_SLASH = False

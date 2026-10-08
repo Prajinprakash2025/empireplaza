@@ -8,6 +8,14 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = ['id', 'name', 'image']
 
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if instance.image:
+            from django.conf import settings
+            base_url = getattr(settings, 'PUBLIC_MEDIA_URL', 'http://187.127.167.18').rstrip('/')
+            ret['image'] = f"{base_url}{instance.image.url}"
+        return ret
+
 
 # ============================================================
 # 🌟 VARIANT SERIALIZER (Quantity Removed from Output)
@@ -70,6 +78,14 @@ class MenuItemSerializer(serializers.ModelSerializer):
                 clean_data['variants'] = []
 
         return super().to_internal_value(clean_data)
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if instance.image:
+            from django.conf import settings
+            base_url = getattr(settings, 'PUBLIC_MEDIA_URL', 'http://187.127.167.18').rstrip('/')
+            ret['image'] = f"{base_url}{instance.image.url}"
+        return ret
 
     # ============================================================
     # 🛑 CUSTOM VALIDATION FOR PRICES & SECTION LIMITS
