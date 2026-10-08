@@ -50,21 +50,26 @@ class MenuItemSerializer(serializers.ModelSerializer):
     # 🌟 multipart/form-data വഴി വരുന്ന string-നെ യഥാർത്ഥ list ആക്കി മാറ്റുന്നു
     def to_internal_value(self, data):
         import json
-        if hasattr(data, 'copy'):
-            data = data.copy()
+        if hasattr(data, 'dict'):
+            clean_data = data.dict()
+        else:
+            clean_data = dict(data)
 
         # 🌟 Item-ന് variants ഇല്ലെങ്കിൽ വെറുതെ വരുന്ന dummy variants ലിസ്റ്റ് ക്ലിയർ ചെയ്യുക
-        has_variants = data.get('has_variants', getattr(self.instance, 'has_variants', False) if self.instance else False)
+        has_variants = clean_data.get('has_variants', getattr(self.instance, 'has_variants', False) if self.instance else False)
         if has_variants in (False, 'false', 'False', 0, '0'):
-            data['variants'] = []
+            clean_data['variants'] = []
         else:
-            variants = data.get('variants')
+            variants = clean_data.get('variants')
             if isinstance(variants, str):
                 try:
-                    data['variants'] = json.loads(variants)
+                    clean_data['variants'] = json.loads(variants)
                 except Exception:
-                    pass
-        return super().to_internal_value(data)
+                    clean_data['variants'] = []
+            elif not isinstance(variants, list):
+                clean_data['variants'] = []
+
+        return super().to_internal_value(clean_data)
 
     # ============================================================
     # 🛑 CUSTOM VALIDATION FOR PRICES & SECTION LIMITS

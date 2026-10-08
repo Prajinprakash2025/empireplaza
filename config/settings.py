@@ -27,7 +27,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
-ALLOWED_HOSTS = allowed_hosts_env.split(',') if allowed_hosts_env else []
+ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',')] if allowed_hosts_env else ['*']
 
 
 
@@ -138,10 +138,23 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 
 
-# CORS Configuration (Allows frontend to connect with cookies)
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",      # Next.js local frontend
+cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS')
+if cors_origins_env:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://187.127.167.18",
+        "http://187.127.167.18:3000",
+        "http://187.127.167.18:3001",
+        "http://187.127.167.18:3002",
+    ]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://187.127.167.18",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
