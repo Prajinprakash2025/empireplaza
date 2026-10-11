@@ -50,10 +50,16 @@ class AcceptDeliveryView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Delivery boy cannot accept another order while busy
-        if profile.is_busy:
+        # Check maximum active deliveries limit (multi-order batching)
+        MAX_ACTIVE_ORDERS = 4
+        active_count = Delivery.objects.filter(
+            delivery_boy=request.user,
+            status='assigned'
+        ).count()
+
+        if active_count >= MAX_ACTIVE_ORDERS:
             return Response(
-                {"error": "You already have an active delivery."},
+                {"error": f"You have reached the maximum active deliveries limit ({MAX_ACTIVE_ORDERS} orders)."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -90,8 +96,9 @@ class AcceptDeliveryView(APIView):
             delivery.delivered_at = None
             delivery.save()
 
-        # Mark delivery boy as busy
-        profile.is_busy = True
+        # Update busy status (only busy if rider hits max capacity)
+        new_active_count = active_count + 1
+        profile.is_busy = (new_active_count >= MAX_ACTIVE_ORDERS)
         profile.save(update_fields=['is_busy'])
 
         # 🌟 Realtime Broadcast: Order status changed to Out for Delivery
@@ -134,10 +141,15 @@ class CompleteDeliveryView(APIView):
         order.payment_status = 'completed'
         order.save()
 
-        # Mark delivery boy as available again
+        # Check remaining active deliveries for this rider
+        remaining_active = Delivery.objects.filter(
+            delivery_boy=request.user,
+            status='assigned'
+        ).exclude(id=delivery.id).count()
+
         try:
             profile = request.user.delivery_profile
-            profile.is_busy = False
+            profile.is_busy = (remaining_active >= 4)
             profile.save(update_fields=['is_busy'])
         except Exception:
             pass
@@ -150,21 +162,22 @@ class CompleteDeliveryView(APIView):
 
 class CurrentDeliveryView(APIView):
     """
-    Get the currently active delivery assigned to the logged-in delivery boy.
+    Get the currently active deliveries assigned to the logged-in delivery boy.
     """
     permission_classes = [IsDeliveryBoy]
 
     def get(self, request):
-        delivery = Delivery.objects.filter(
+        deliveries = Delivery.objects.filter(
             delivery_boy=request.user,
             status='assigned'
-        ).select_related('order').first()
+        ).select_related('order').order_by('order__created_at')
 
-        if not delivery:
-            return Response({"active_delivery": None})
+        deliveries_data = DeliverySerializer(deliveries, many=True).data
 
         return Response({
-            "active_delivery": DeliverySerializer(delivery).data
+            "active_delivery": deliveries_data[0] if deliveries_data else None,
+            "active_deliveries": deliveries_data,
+            "active_count": len(deliveries_data)
         })
 
 
@@ -246,4 +259,46 @@ class DeliveryProfileView(APIView):
             "is_busy": profile.is_busy,
             "total_delivered": total_delivered,
             "today_delivered": today_delivered,
-        })
+        })
+
+
+class UpdateLocationView(APIView):
+    """
+    Update delivery boy's live GPS coordinates and broadcast via Pusher.
+    """
+    permission_classes = [IsDeliveryBoy]
+
+    def post(self, request):
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+
+        if latitude is None or longitude is None:
+            return Response(
+                {"error": "Latitude and Longitude are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            profile = request.user.delivery_profile
+            profile.current_latitude = float(latitude)
+            profile.current_longitude = float(longitude)
+            profile.save(update_fields=['current_latitude', 'current_longitude'])
+        except Exception:
+            return Response({"error": "Delivery profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Broadcast live location for customers tracking their active orders
+        active_order_ids = list(
+            Delivery.objects.filter(
+                delivery_boy=request.user,
+                status='assigned'
+            ).values_list('order_id', flat=True)
+        )
+
+        trigger_order_event('delivery-location-updated', {
+            'delivery_boy_id': request.user.id,
+            'latitude': float(latitude),
+            'longitude': float(longitude),
+            'active_order_ids': active_order_ids
+        })
+
+        return Response({"status": True, "latitude": float(latitude), "longitude": float(longitude)})

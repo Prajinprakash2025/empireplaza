@@ -7,6 +7,7 @@ from .views import (
     DeliveryHistoryView,
     ToggleDutyView,
     DeliveryProfileView,
+    UpdateLocationView,
 )
 
 urlpatterns = [
@@ -44,5 +45,10 @@ urlpatterns = [
         'orders/<int:order_id>/complete',
         CompleteDeliveryView.as_view(),
         name='complete_delivery'
+    ),
+    path(
+        'update-location',
+        UpdateLocationView.as_view(),
+        name='update_location'
     ),
 ]
