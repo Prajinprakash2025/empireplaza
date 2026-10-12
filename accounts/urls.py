@@ -1,7 +1,13 @@
 from django.urls import path, include
-from .views import SendOTPView, SignUpView, UserProfileView, VerifyOTPView, LogoutView, CookieTokenRefreshView, StaffAndAdminLoginView, StaffManagementViewSet,DeliveryBoyManagementViewSet, DeliveryBoyLoginView,ContactMessageViewSet,TableBookingViewSet,CustomerManagementViewSet
+from .views import (
+    SendOTPView, SignUpView, UserProfileView, VerifyOTPView, FirebaseVerifyView,
+    LogoutView, CookieTokenRefreshView, StaffAndAdminLoginView,
+    StaffManagementViewSet, DeliveryBoyManagementViewSet, DeliveryBoyLoginView,
+    ContactMessageViewSet, TableBookingViewSet, CustomerManagementViewSet,
+    AddressViewSet
+)
 from rest_framework.routers import DefaultRouter
-from .views import AddressViewSet
+
 
 
 router = DefaultRouter(trailing_slash=False)
@@ -31,6 +37,7 @@ urlpatterns = [
     path('profile', UserProfileView.as_view(), name='user_profile'),
     path('send-otp', SendOTPView.as_view(), name='send_otp'),
     path('verify-otp', VerifyOTPView.as_view(), name='verify_otp'),
+    path('firebase-verify', FirebaseVerifyView.as_view(), name='firebase_verify'),
     # admin and staff login
     path('admin/login', StaffAndAdminLoginView.as_view(), name='staff_admin_login'),
     # delivery boy login
