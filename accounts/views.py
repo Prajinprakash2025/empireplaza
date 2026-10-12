@@ -57,8 +57,7 @@ class SignUpView(APIView):
         user.is_verified = False
         user.save()
 
-        # 📲 Send Real SMS via 2Factor.in
-        send_2factor_otp(phone_number, otp_code)
+        # OTP saved to database for fallback
         print(f"--- SIGNUP OTP for {phone_number} is {otp_code} ---")
 
         return Response({
@@ -124,8 +123,7 @@ class SendOTPView(APIView):
         user.is_verified = False
         user.save()
 
-        # 📲 Send Real SMS via 2Factor.in
-        send_2factor_otp(phone_number, otp_code)
+        # OTP saved to database for fallback
         print(f"--- OTP for {phone_number} is {otp_code} ---")
         
         return Response({
