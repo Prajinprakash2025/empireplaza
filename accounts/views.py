@@ -62,9 +62,9 @@ class SignUpView(APIView):
 
         return Response({
             "status": True,
-            "message": "Account details saved. OTP sent successfully for verification.",
-            "otp_development_only": otp_code
+            "message": "Account details saved. OTP sent successfully for verification."
         }, status=status.HTTP_200_OK)
+
 # 3. 🌟 NEW: Customer Profile & Address View (Address update cheyyaan):
 class UserProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -127,9 +127,9 @@ class SendOTPView(APIView):
         print(f"--- OTP for {phone_number} is {otp_code} ---")
         
         return Response({
-            "message": "OTP sent successfully",
-            "otp_development_only": otp_code  # Remove this field in production!
+            "message": "OTP sent successfully"
         }, status=status.HTTP_200_OK)
+
 
 
 class VerifyOTPView(APIView):
