@@ -231,6 +231,7 @@ class OrderReadSerializer(serializers.ModelSerializer):
         try:
             if hasattr(obj, 'delivery_details') and obj.delivery_details:
                 boy = obj.delivery_details.delivery_boy
+                profile = getattr(boy, 'delivery_profile', None)
                 name = (boy.get_full_name() or boy.username or boy.phone_number).strip()
                 return {
                     'id': boy.id,
@@ -238,6 +239,8 @@ class OrderReadSerializer(serializers.ModelSerializer):
                     'phone': boy.phone_number,
                     'employee_id': getattr(boy, 'employee_id', None),
                     'status': obj.delivery_details.status,
+                    'latitude': profile.current_latitude if profile else None,
+                    'longitude': profile.current_longitude if profile else None,
                 }
         except Exception:
             pass
