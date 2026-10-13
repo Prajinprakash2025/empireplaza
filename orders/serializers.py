@@ -433,6 +433,14 @@ class CheckoutSerializer(serializers.Serializer):
 
             total_price += line_total
 
+            # Variant packing charge or base item fallback
+            pkg = Decimal('0.00')
+            if variant and variant.packing_charge is not None and variant.packing_charge > 0:
+                pkg = Decimal(str(variant.packing_charge))
+            elif menu_item and menu_item.packing_charge:
+                pkg = Decimal(str(menu_item.packing_charge))
+            total_price += pkg * item.quantity
+
             order_items_to_create.append({
                 'menu_item': menu_item,
                 'variant': variant,
@@ -442,6 +450,10 @@ class CheckoutSerializer(serializers.Serializer):
                 'unit_price': unit_price,
                 'line_total': line_total,
             })
+
+        # Add delivery fee (flat ₹30 if items ordered)
+        if order_items_to_create:
+            total_price += Decimal('30.00')
 
         # -----------------------------------------
         # 6. CREATE ORDER
