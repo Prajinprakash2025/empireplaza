@@ -50,6 +50,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
             'has_variants',
             'actual_price',
             'offer_price',
+            'packing_charge',
             'is_available',
             'created_at',
             'variants',
@@ -62,6 +63,11 @@ class MenuItemSerializer(serializers.ModelSerializer):
             clean_data = data.dict()
         else:
             clean_data = dict(data)
+
+        # 🌟 packing_charge empty string or null ആണെങ്കിൽ 0.00 ആക്കുക
+        packing_charge = clean_data.get('packing_charge')
+        if packing_charge in ('', None):
+            clean_data['packing_charge'] = 0.00
 
         # 🌟 Item-ന് variants ഇല്ലെങ്കിൽ വെറുതെ വരുന്ന dummy variants ലിസ്റ്റ് ക്ലിയർ ചെയ്യുക
         has_variants = clean_data.get('has_variants', getattr(self.instance, 'has_variants', False) if self.instance else False)

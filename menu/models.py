@@ -43,6 +43,7 @@ class MenuItem(models.Model):
     # 🌟 CHANGED: Size ulla items-nu direct price aavashyamilla, athukondu blank/null aakki
     actual_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Actual ₹", blank=True, null=True)
     offer_price = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, verbose_name="Offer ₹")
+    packing_charge = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, verbose_name="Packing Charge ₹")
     quantity = models.PositiveIntegerField(default=0, verbose_name="Qty")
     
     # --- Metadata ---

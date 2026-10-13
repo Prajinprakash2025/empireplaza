@@ -28,6 +28,7 @@ class CartMenuItemMinimalSerializer(serializers.ModelSerializer):
             'has_variants',
             'actual_price',
             'offer_price',
+            'packing_charge',
             'is_available',
         ]
 
@@ -87,6 +88,7 @@ class CartReadSerializer(serializers.ModelSerializer):
     items = CartItemReadSerializer(many=True, read_only=True)
     total_items = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
+    total_packing_charge = serializers.SerializerMethodField()
 
     class Meta:
         model = Cart
@@ -95,6 +97,7 @@ class CartReadSerializer(serializers.ModelSerializer):
             'items',
             'total_items',
             'total_price',
+            'total_packing_charge',
             'created_at',
             'updated_at',
         ]
@@ -111,6 +114,13 @@ class CartReadSerializer(serializers.ModelSerializer):
                 price = item.menu_item.offer_price if item.menu_item.offer_price is not None else item.menu_item.actual_price
             if price is not None:
                 total += Decimal(str(price)) * item.quantity
+        return str(total)
+
+    def get_total_packing_charge(self, obj):
+        total = Decimal('0.00')
+        for item in obj.items.all():
+            if item.menu_item and item.menu_item.packing_charge:
+                total += Decimal(str(item.menu_item.packing_charge)) * item.quantity
         return str(total)
 
 
