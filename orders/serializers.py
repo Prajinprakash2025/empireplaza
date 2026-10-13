@@ -49,6 +49,7 @@ class CartVariantMinimalSerializer(serializers.ModelSerializer):
             'size_name',
             'actual_price',
             'offer_price',
+            'packing_charge',
             'is_available',
         ]
 
@@ -119,8 +120,12 @@ class CartReadSerializer(serializers.ModelSerializer):
     def get_total_packing_charge(self, obj):
         total = Decimal('0.00')
         for item in obj.items.all():
-            if item.menu_item and item.menu_item.packing_charge:
-                total += Decimal(str(item.menu_item.packing_charge)) * item.quantity
+            pkg = Decimal('0.00')
+            if item.variant and item.variant.packing_charge is not None and item.variant.packing_charge > 0:
+                pkg = Decimal(str(item.variant.packing_charge))
+            elif item.menu_item and item.menu_item.packing_charge:
+                pkg = Decimal(str(item.menu_item.packing_charge))
+            total += pkg * item.quantity
         return str(total)
 
 

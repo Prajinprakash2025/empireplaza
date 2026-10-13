@@ -61,6 +61,7 @@ class MenuItemVariant(models.Model):
     
     actual_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Actual ₹")
     offer_price = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, verbose_name="Offer ₹")
+    packing_charge = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, blank=True, null=True, verbose_name="Packing Charge ₹")
     quantity = models.PositiveIntegerField(default=0, verbose_name="Qty / Stock")
     
     is_available = models.BooleanField(default=True)

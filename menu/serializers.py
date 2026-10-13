@@ -23,7 +23,14 @@ class CategorySerializer(serializers.ModelSerializer):
 class MenuItemVariantSerializer(serializers.ModelSerializer):
     class Meta:
         model = MenuItemVariant
-        fields = ['id', 'size_name', 'actual_price', 'offer_price', 'is_available']
+        fields = ['id', 'size_name', 'actual_price', 'offer_price', 'packing_charge', 'is_available']
+
+    def to_internal_value(self, data):
+        clean_data = dict(data) if not isinstance(data, dict) else data.copy()
+        pkg = clean_data.get('packing_charge')
+        if pkg in ('', None):
+            clean_data['packing_charge'] = 0.00
+        return super().to_internal_value(clean_data)
 
 
 # ============================================================
