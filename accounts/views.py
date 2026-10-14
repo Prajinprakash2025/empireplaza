@@ -435,12 +435,22 @@ class CustomerManagementViewSet(viewsets.ReadOnlyModelViewSet):
         }, status=status.HTTP_200_OK)  # 👈 10 items per page
 
     def get_queryset(self):
+        from django.db.models import Count, Sum, Max, Value, DecimalField
+        from django.db.models.functions import Coalesce
+        from decimal import Decimal
+
         queryset = User.objects.filter(
             role='user'
-        ).order_by('-date_joined')
+        ).annotate(
+            total_orders=Count('orders', distinct=True),
+            total_spent=Coalesce(
+                Sum('orders__total_price', filter=~Q(orders__status='cancelled')),
+                Value(Decimal('0.00'), output_field=DecimalField(max_digits=12, decimal_places=2))
+            ),
+            last_order_date=Max('orders__created_at'),
+        )
 
         search = self.request.query_params.get('search', '').strip()
-
         if search:
             queryset = queryset.filter(
                 Q(username__icontains=search) |
@@ -450,13 +460,76 @@ class CustomerManagementViewSet(viewsets.ReadOnlyModelViewSet):
                 Q(phone_number__icontains=search)
             )
 
+        # Filter: 'all', 'top', 'active', 'blocked'
+        filter_type = self.request.query_params.get('filter', 'all').lower()
+        if filter_type == 'top':
+            queryset = queryset.filter(total_orders__gte=1)
+        elif filter_type == 'active':
+            queryset = queryset.filter(is_active=True)
+        elif filter_type == 'blocked':
+            queryset = queryset.filter(is_active=False)
+
+        # Sorting: 'most_orders', 'highest_spent', 'newest', 'name'
+        sort_by = self.request.query_params.get('sort', 'newest').lower()
+        if sort_by == 'most_orders':
+            queryset = queryset.order_by('-total_orders', '-total_spent', '-date_joined')
+        elif sort_by == 'highest_spent':
+            queryset = queryset.order_by('-total_spent', '-total_orders', '-date_joined')
+        elif sort_by == 'name':
+            queryset = queryset.order_by('first_name', 'username')
+        else: # default: newest
+            queryset = queryset.order_by('-date_joined')
+
         return queryset
+
     @action(detail=True, methods=['get'], url_path='addresses')
     def addresses(self, request, pk=None):
-      customer = self.get_object()
-      addresses = Address.objects.filter(user=customer).order_by('-is_default', '-created_at')
-      serializer = AddressSerializer(addresses, many=True)
-      return Response(serializer.data)
+        customer = self.get_object()
+        addresses = Address.objects.filter(user=customer).order_by('-is_default', '-created_at')
+        serializer = AddressSerializer(addresses, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='orders')
+    def orders(self, request, pk=None):
+        from django.db.models import Sum
+        customer = self.get_object()
+        orders = customer.orders.all().prefetch_related('items').order_by('-created_at')
+        orders_data = []
+        for o in orders:
+            orders_data.append({
+                'id': o.id,
+                'total_price': float(o.total_price),
+                'status': o.status,
+                'payment_status': o.payment_status,
+                'delivery_address': o.delivery_address,
+                'special_instructions': o.special_instructions,
+                'created_at': o.created_at.isoformat(),
+                'items_count': o.items.count(),
+                'items': [
+                    {
+                        'id': item.id,
+                        'item_name': item.item_name,
+                        'variant_name': item.variant_name,
+                        'quantity': item.quantity,
+                        'unit_price': float(item.unit_price),
+                        'line_total': float(item.line_total),
+                    }
+                    for item in o.items.all()
+                ],
+            })
+
+        return Response({
+            'status': True,
+            'customer': {
+                'id': customer.id,
+                'name': (f"{customer.first_name} {customer.last_name}".strip()) or customer.username,
+                'phone': customer.phone_number,
+                'email': customer.email,
+                'total_orders': customer.orders.count(),
+                'total_spent': float(customer.orders.exclude(status='cancelled').aggregate(s=Sum('total_price'))['s'] or 0),
+            },
+            'orders': orders_data,
+        }, status=status.HTTP_200_OK)
 
 
 

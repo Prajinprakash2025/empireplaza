@@ -36,9 +36,28 @@ class VerifyOTPSerializer(serializers.Serializer):
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
+    total_orders = serializers.IntegerField(read_only=True, default=0)
+    total_spent = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, default=0)
+    last_order_date = serializers.DateTimeField(read_only=True, allow_null=True, default=None)
+    customer_badge = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ['id', 'employee_id', 'username', 'first_name', 'last_name', 'email', 'phone_number', 'role', 'address', 'is_active']
+        fields = [
+            'id', 'employee_id', 'username', 'first_name', 'last_name',
+            'email', 'phone_number', 'role', 'address', 'is_active',
+            'total_orders', 'total_spent', 'last_order_date', 'customer_badge'
+        ]
+
+    def get_customer_badge(self, obj):
+        orders_count = getattr(obj, 'total_orders', 0) or 0
+        if orders_count >= 5:
+            return 'VIP'
+        elif orders_count >= 2:
+            return 'REGULAR'
+        elif orders_count >= 1:
+            return 'NEW'
+        return 'INACTIVE'
 
 # Unified Login Serializer for Admin & Employee
 class StaffLoginSerializer(serializers.Serializer):
