@@ -2,6 +2,7 @@ import random
 from django.utils import timezone
 from django.db.models import Q
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -105,9 +106,14 @@ class SendOTPView(APIView):
         role = serializer.validated_data.get('role', 'user')
         username = serializer.validated_data.get('username', f"user_{phone_number}")
 
-        # Generate a random 6-digit OTP
-        otp_code = str(random.randint(100000, 999999))
-        
+        # 🛡️ 1. Cooldown Check: Prevent spamming Send OTP within 45 seconds
+        cooldown_key = f"otp_cooldown_{phone_number}"
+        if cache.get(cooldown_key):
+            return Response(
+                {"error": "Please wait before requesting another OTP."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
         # Check if user already exists
         try:
             user = User.objects.get(phone_number=phone_number)
@@ -117,11 +123,25 @@ class SendOTPView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        # 🛡️ 2. Security Check: Deactivated / Blocked accounts
+        if not user.is_active:
+            return Response(
+                {"error": "Your account has been deactivated. Please contact support."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Generate a random 6-digit OTP
+        otp_code = str(random.randint(100000, 999999))
+
         # Save OTP details to database
         user.otp = otp_code
         user.otp_created_at = timezone.now()
         user.is_verified = False
         user.save()
+
+        # Set 45-second cooldown and reset failed attempts counter for new OTP
+        cache.set(cooldown_key, True, timeout=45)
+        cache.delete(f"otp_attempts_{phone_number}")
 
         # OTP saved to database for fallback
         print(f"--- OTP for {phone_number} is {otp_code} ---")
@@ -148,9 +168,33 @@ class VerifyOTPView(APIView):
         except User.DoesNotExist:
             return Response({"error": "User with this phone number not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        if user.otp != otp or user.is_otp_expired():
-            return Response({"error": "Invalid or expired OTP"}, status=status.HTTP_400_BAD_REQUEST)
+        # 🛡️ 1. Security Check: Deactivated / Blocked accounts
+        if not user.is_active:
+            return Response(
+                {"error": "Your account has been deactivated. Please contact support."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
+        # 🛡️ 2. Brute Force Protection: Max 5 failed attempts per OTP
+        cache_key = f"otp_attempts_{phone_number}"
+        attempts = cache.get(cache_key, 0)
+        if attempts >= 5:
+            user.otp = None
+            user.save(update_fields=['otp'])
+            cache.delete(cache_key)
+            return Response(
+                {"error": "Too many failed attempts. This OTP has been invalidated. Please request a new OTP."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
+        if user.otp != otp or user.is_otp_expired():
+            cache.set(cache_key, attempts + 1, timeout=600)
+            remaining = 5 - (attempts + 1)
+            error_msg = f"Invalid or expired OTP. {remaining} attempt(s) remaining." if remaining > 0 else "Invalid OTP. Maximum attempts exceeded. Please request a new OTP."
+            return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Success - clear attempts and verify
+        cache.delete(cache_key)
         user.is_verified = True
         user.otp = None
         user.otp_created_at = None
@@ -316,6 +360,13 @@ class StaffAndAdminLoginView(APIView):
 
         if user is None or not user.check_password(password):
             return Response({"error": "Invalid Username/Email or Password"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # 🛡️ Security Check: Deactivated / Blocked accounts
+        if not user.is_active:
+            return Response(
+                {"error": "Your account has been deactivated. Please contact the administrator."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         # Restrict to Admin and Employee roles ONLY
         if user.role not in ['admin', 'employee'] and not user.is_superuser:
