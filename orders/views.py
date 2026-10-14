@@ -417,7 +417,7 @@ class CartMergeView(APIView):
 
 
 # ============================================================
-# 📊 SWIGGY-STYLE RESTAURANT DASHBOARD & ANALYTICS VIEW
+# 📊 RESTAURANT DASHBOARD & REAL-TIME ANALYTICS VIEW
 # ============================================================
 
 class StaffDashboardAnalyticsView(APIView):
@@ -526,7 +526,7 @@ class StaffDashboardAnalyticsView(APIView):
             'cod_revenue': float(cod_orders.aggregate(s=Sum('total_price'))['s'] or 0),
         }
 
-        # 6. Timeline Chart (Swiggy-Partner Trend Graph)
+        # 6. Timeline Chart (Sales Progression & Order Trends)
         timeline = []
         if period == 'today':
             for h in range(8, 24, 2):
@@ -602,7 +602,7 @@ class StaffDashboardAnalyticsView(APIView):
                     'orders': y_orders.count(),
                 })
 
-        # 7. Top Selling Dishes (Best Sellers)
+        # 7. Top Selling Dishes (Best Sellers in Selected Period)
         top_items_qs = (
             OrderItem.objects
             .filter(order__in=period_orders)
@@ -611,7 +611,7 @@ class StaffDashboardAnalyticsView(APIView):
                 total_qty=Sum('quantity'),
                 total_sales=Sum('line_total')
             )
-            .order_by('-total_qty')[:6]
+            .order_by('-total_qty')[:10]
         )
         top_selling_items = []
         for item in top_items_qs:
@@ -622,6 +622,73 @@ class StaffDashboardAnalyticsView(APIView):
                 'quantity_sold': item['total_qty'],
                 'revenue': float(item['total_sales'] or 0),
             })
+
+        # 7b. All-Time Bestsellers (Overall top selling items across all orders)
+        all_time_top_qs = (
+            OrderItem.objects
+            .values('item_name', 'menu_item__category__name', 'menu_item__dietary_preference')
+            .annotate(
+                total_qty=Sum('quantity'),
+                total_sales=Sum('line_total')
+            )
+            .order_by('-total_qty')[:10]
+        )
+        all_time_top_selling = []
+        for item in all_time_top_qs:
+            all_time_top_selling.append({
+                'name': item['item_name'],
+                'category': item['menu_item__category__name'] or 'Main Course',
+                'dietary': item['menu_item__dietary_preference'] or 'NON-VEG',
+                'quantity_sold': item['total_qty'],
+                'revenue': float(item['total_sales'] or 0),
+            })
+
+        # 7c. Category Sales Distribution
+        category_qs = (
+            OrderItem.objects
+            .filter(order__in=period_orders)
+            .values('menu_item__category__name')
+            .annotate(
+                total_qty=Sum('quantity'),
+                total_sales=Sum('line_total')
+            )
+            .order_by('-total_sales')[:6]
+        )
+        if not category_qs.exists():
+            category_qs = (
+                OrderItem.objects
+                .values('menu_item__category__name')
+                .annotate(
+                    total_qty=Sum('quantity'),
+                    total_sales=Sum('line_total')
+                )
+                .order_by('-total_sales')[:6]
+            )
+
+        cat_total_revenue = sum(float(c['total_sales'] or 0) for c in category_qs) or 1.0
+        category_distribution = []
+        for cat in category_qs:
+            c_sales = float(cat['total_sales'] or 0)
+            category_distribution.append({
+                'name': cat['menu_item__category__name'] or 'Specialties',
+                'quantity': cat['total_qty'],
+                'revenue': c_sales,
+                'percentage': round((c_sales / cat_total_revenue) * 100, 1),
+            })
+
+        # 7d. Operations & Peak Hours Analysis
+        peak_point = max(timeline, key=lambda x: x['orders']) if timeline else None
+        busiest_slot = f"{peak_point['label']} ({peak_point['orders']} orders)" if peak_point and peak_point['orders'] > 0 else "Evenly Distributed"
+        fulfillment_rate = round((delivered_count / total_orders_count * 100), 1) if total_orders_count > 0 else 100.0
+        cancellation_rate = round((cancelled_count / total_orders_count * 100), 1) if total_orders_count > 0 else 0.0
+        total_items_sold_count = sum(i['quantity_sold'] for i in top_selling_items) if top_selling_items else 0
+
+        operations_metrics = {
+            'busiest_slot': busiest_slot,
+            'fulfillment_rate': fulfillment_rate,
+            'cancellation_rate': cancellation_rate,
+            'total_items_sold': total_items_sold_count,
+        }
 
         # 8. Recent Live Orders (latest 6)
         recent_orders_qs = (
@@ -669,6 +736,9 @@ class StaffDashboardAnalyticsView(APIView):
                 'payment_breakdown': payment_breakdown,
                 'timeline': timeline,
                 'top_selling_items': top_selling_items,
+                'all_time_top_selling': all_time_top_selling,
+                'category_distribution': category_distribution,
+                'operations_metrics': operations_metrics,
                 'recent_orders': recent_orders,
             }
         })
