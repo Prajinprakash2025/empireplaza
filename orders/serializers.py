@@ -1,5 +1,6 @@
 from decimal import Decimal
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from menu.models import MenuItem, MenuItemVariant
@@ -241,6 +242,7 @@ class OrderItemReadSerializer(serializers.ModelSerializer):
 class OrderReadSerializer(serializers.ModelSerializer):
     items = OrderItemReadSerializer(many=True, read_only=True)
     delivery_boy = serializers.SerializerMethodField()
+    packing_duration_mins = serializers.SerializerMethodField()
 
     def get_delivery_boy(self, obj):
         try:
@@ -261,6 +263,12 @@ class OrderReadSerializer(serializers.ModelSerializer):
             pass
         return None
 
+    def get_packing_duration_mins(self, obj):
+        if obj.packed_at and obj.created_at:
+            diff_secs = (obj.packed_at - obj.created_at).total_seconds()
+            return max(1, round(diff_secs / 60))
+        return None
+
     class Meta:
         model = Order
         fields = [
@@ -278,13 +286,21 @@ class OrderReadSerializer(serializers.ModelSerializer):
             'delivery_boy',
             'created_at',
             'updated_at',
+            'packed_at',
+            'packing_duration_mins',
         ]
 
 
 class OrderStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
-        fields = ['status', 'payment_status']
+        fields = ['status', 'payment_status', 'packed_at']
+
+    def update(self, instance, validated_data):
+        new_status = validated_data.get('status')
+        if new_status in ['ready_for_pickup', 'out_for_delivery', 'delivered'] and not instance.packed_at:
+            instance.packed_at = timezone.now()
+        return super().update(instance, validated_data)
 
 
 from decimal import Decimal

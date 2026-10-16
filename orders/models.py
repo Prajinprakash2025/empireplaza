@@ -119,6 +119,12 @@ class Order(models.Model):
         db_index=True,
     )
     updated_at = models.DateTimeField(auto_now=True)
+    packed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Timestamp when order was packed / marked ready for pickup",
+    )
 
     class Meta:
         ordering = ['-created_at']
