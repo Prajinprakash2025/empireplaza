@@ -343,7 +343,31 @@ class CheckoutSerializer(serializers.Serializer):
             )
 
         # -----------------------------------------
-        # 3. CHECK ITEM AVAILABILITY
+        # 3. CHECK STORE STATUS & DELIVERY RADIUS
+        # -----------------------------------------
+
+        site_settings = SiteSetting.objects.first()
+        if site_settings and not site_settings.is_open:
+            raise serializers.ValidationError(
+                "Empire Plaza is currently closed for online orders. Browsing is permitted, but new orders are paused until opening hours."
+            )
+
+        if site_settings and site_settings.delivery_radius and float(site_settings.delivery_radius) > 0:
+            if address.latitude and address.longitude and site_settings.latitude and site_settings.longitude:
+                distance_km = calculate_haversine_distance_km(
+                    site_settings.latitude,
+                    site_settings.longitude,
+                    address.latitude,
+                    address.longitude,
+                )
+                max_radius = float(site_settings.delivery_radius)
+                if distance_km > max_radius:
+                    raise serializers.ValidationError(
+                        f"Delivery unavailable: Your address is {distance_km:.1f} KM away, exceeding our maximum delivery radius of {max_radius:.1f} KM."
+                    )
+
+        # -----------------------------------------
+        # 4. CHECK ITEM AVAILABILITY
         # -----------------------------------------
 
         for item in cart.items.all():

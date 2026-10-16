@@ -210,6 +210,12 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         data['base_delivery_distance'] = float(instance.base_delivery_distance or 1.0)
         data['per_km_charge'] = float(instance.per_km_charge or 0.0)
         data['free_delivery_threshold'] = float(instance.free_delivery_threshold) if instance.free_delivery_threshold is not None else None
+        data['is_open'] = bool(instance.is_open)
+        data['isOpen'] = bool(instance.is_open)
+        data['is_manually_open'] = bool(instance.is_manually_open)
+        data['delivery_radius'] = float(instance.delivery_radius or 0.0)
+        data['opening_time'] = str(instance.opening_time) if instance.opening_time else None
+        data['closing_time'] = str(instance.closing_time) if instance.closing_time else None
 
         return data
 

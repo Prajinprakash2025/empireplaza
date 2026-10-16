@@ -84,6 +84,16 @@ class CartItemAddView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        site_settings = SiteSetting.objects.first()
+        if site_settings and not site_settings.is_open:
+            return Response(
+                {
+                    'status': False,
+                    'message': 'Empire Plaza is currently closed for orders. You can browse our menu, but new orders are paused until opening hours.',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         serializer = CartItemAddSerializer(
             data=request.data,
             context={'request': request},
@@ -243,6 +253,15 @@ class DeliveryEstimateView(APIView):
         if store_lat and store_lng and cust_lat and cust_lng:
             distance_km = calculate_haversine_distance_km(store_lat, store_lng, cust_lat, cust_lng)
 
+        delivery_radius = float(getattr(site_settings, 'delivery_radius', 0.0) or 0.0)
+        is_store_open = site_settings.is_open if site_settings else True
+        is_within_radius = True
+        radius_message = ""
+        if delivery_radius > 0 and distance_km > 0:
+            if distance_km > delivery_radius:
+                is_within_radius = False
+                radius_message = f"Delivery unavailable: Your address is {distance_km} KM away, exceeding our maximum delivery radius of {delivery_radius} KM."
+
         fee = calculate_delivery_fee(distance_km, subtotal, site_settings)
 
         return Response({
@@ -250,6 +269,11 @@ class DeliveryEstimateView(APIView):
             'data': {
                 'distance_km': distance_km,
                 'delivery_fee': float(fee),
+                'delivery_radius': delivery_radius,
+                'is_within_radius': is_within_radius,
+                'radius_message': radius_message,
+                'is_store_open': is_store_open,
+                'is_open': is_store_open,
                 'base_delivery_charge': float(getattr(site_settings, 'base_delivery_charge', 20.00) or 20.00),
                 'base_delivery_distance': float(getattr(site_settings, 'base_delivery_distance', 1.0) or 1.0),
                 'per_km_charge': float(getattr(site_settings, 'per_km_charge', 10.00) or 10.00),
