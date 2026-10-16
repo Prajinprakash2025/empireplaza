@@ -22,6 +22,24 @@ class SiteSetting(models.Model):
 
     delivery_radius = models.FloatField(default=0.0, help_text="In KM")
 
+    # Delivery Fee Pricing
+    base_delivery_charge = models.DecimalField(
+        max_digits=6, decimal_places=2, default=20.00,
+        help_text="Base delivery charge in INR"
+    )
+    base_delivery_distance = models.FloatField(
+        default=1.0,
+        help_text="Base distance in KM covered by base charge"
+    )
+    per_km_charge = models.DecimalField(
+        max_digits=6, decimal_places=2, default=10.00,
+        help_text="Charge per KM after base distance"
+    )
+    free_delivery_threshold = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True, default=None,
+        help_text="Order subtotal for free delivery (null = no free delivery)"
+    )
+
     # Footer & Working Hours
     footer_description = models.TextField(blank=True, null=True, default="")
     working_hours_mon_sat = models.CharField(

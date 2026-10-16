@@ -270,6 +270,8 @@ class OrderReadSerializer(serializers.ModelSerializer):
             'delivery_address',
             'special_instructions',
             'total_price',
+            'delivery_fee',
+            'delivery_distance_km',
             'status',
             'payment_status',
             'items',
@@ -291,6 +293,8 @@ from rest_framework import serializers
 
 from accounts.models import Address
 from menu.models import MenuItem, MenuItemVariant
+from settings.models import SiteSetting
+from .distance_utils import calculate_haversine_distance_km, calculate_delivery_fee
 from .models import Cart, CartItem, Order, OrderItem
 
 
@@ -451,9 +455,23 @@ class CheckoutSerializer(serializers.Serializer):
                 'line_total': line_total,
             })
 
-        # Add delivery fee (flat ₹30 if items ordered)
+        # -----------------------------------------
+        # 5.1 CALCULATE DYNAMIC DISTANCE & DELIVERY FEE
+        # -----------------------------------------
+        site_settings = SiteSetting.objects.first()
+        distance_km = 0.0
+        if site_settings and address.latitude and address.longitude:
+            distance_km = calculate_haversine_distance_km(
+                site_settings.latitude,
+                site_settings.longitude,
+                address.latitude,
+                address.longitude,
+            )
+
+        delivery_fee = Decimal('0.00')
         if order_items_to_create:
-            total_price += Decimal('30.00')
+            delivery_fee = calculate_delivery_fee(distance_km, total_price, site_settings)
+            total_price += delivery_fee
 
         # -----------------------------------------
         # 6. CREATE ORDER
@@ -466,6 +484,8 @@ class CheckoutSerializer(serializers.Serializer):
             delivery_address=delivery_address,
             special_instructions=special_instructions,
             total_price=total_price,
+            delivery_fee=delivery_fee,
+            delivery_distance_km=distance_km,
             status='preparing',
             payment_status='pending',
         )

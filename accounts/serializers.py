@@ -127,10 +127,37 @@ class DeliveryBoyProfileSerializer(serializers.ModelSerializer):
 
 class DeliveryBoyUserSerializer(serializers.ModelSerializer):
     delivery_profile = DeliveryBoyProfileSerializer(read_only=True)
+    today_km = serializers.SerializerMethodField()
+    total_km = serializers.SerializerMethodField()
+    total_deliveries = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'employee_id', 'username', 'first_name', 'last_name', 'email', 'phone_number', 'role', 'address', 'delivery_profile']
+        fields = [
+            'id', 'employee_id', 'username', 'first_name', 'last_name',
+            'email', 'phone_number', 'role', 'address', 'delivery_profile',
+            'today_km', 'total_km', 'total_deliveries'
+        ]
+
+    def get_today_km(self, obj):
+        from django.utils import timezone
+        from django.db.models import Sum
+        today = timezone.localdate()
+        total = obj.deliveries.filter(
+            status='delivered',
+            delivered_at__date=today
+        ).aggregate(s=Sum('order__delivery_distance_km'))['s']
+        return round(float(total or 0.0), 1)
+
+    def get_total_km(self, obj):
+        from django.db.models import Sum
+        total = obj.deliveries.filter(
+            status='delivered'
+        ).aggregate(s=Sum('order__delivery_distance_km'))['s']
+        return round(float(total or 0.0), 1)
+
+    def get_total_deliveries(self, obj):
+        return obj.deliveries.filter(status='delivered').count()
 
 
 class DeliveryBoyCreateSerializer(serializers.ModelSerializer):
@@ -203,6 +230,8 @@ class AddressSerializer(serializers.ModelSerializer):
             'city',
             'state',
             'pincode',
+            'latitude',
+            'longitude',
             'is_default',
             'created_at',
             'updated_at',

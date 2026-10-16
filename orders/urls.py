@@ -9,6 +9,7 @@ urlpatterns = [
     path('cart/clear', views.CartClearView.as_view(), name='cart-clear'),
 
     # --- 📦 CHECKOUT & USER ORDERS ---
+    path('delivery-estimate', views.DeliveryEstimateView.as_view(), name='delivery-estimate'),
     path('checkout', views.CheckoutView.as_view(), name='order-checkout'),
     path('my-orders', views.CustomerOrderListView.as_view(), name='customer-order-list'),
     path('my-orders/<int:pk>', views.CustomerOrderDetailView.as_view(), name='customer-order-detail'),

@@ -90,6 +90,16 @@ class Order(models.Model):
         default=0,
     )
 
+    delivery_fee = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=0.00,
+    )
+    delivery_distance_km = models.FloatField(
+        default=0.0,
+        help_text="Calculated delivery distance in KM",
+    )
+
     status = models.CharField(
         max_length=30,
         choices=STATUS_CHOICES,

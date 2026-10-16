@@ -27,6 +27,10 @@ from .serializers import (
     CartMergeSerializer,   # 👈 Add this
 )
 from .pusher_utils import trigger_order_event
+from decimal import Decimal
+from accounts.models import Address
+from settings.models import SiteSetting
+from .distance_utils import calculate_haversine_distance_km, calculate_delivery_fee
 
 
 class OrderPagination(PageNumberPagination):
@@ -197,6 +201,62 @@ class CheckoutView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class DeliveryEstimateView(APIView):
+    """
+    Public or Authenticated endpoint to estimate delivery distance and fee
+    before placing an order. Supports address_id or direct latitude/longitude.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        address_id = request.query_params.get('address_id')
+        lat = request.query_params.get('latitude') or request.query_params.get('lat')
+        lng = request.query_params.get('longitude') or request.query_params.get('lng')
+        subtotal_str = request.query_params.get('subtotal') or '0.00'
+
+        try:
+            subtotal = Decimal(str(subtotal_str))
+        except Exception:
+            subtotal = Decimal('0.00')
+
+        site_settings = SiteSetting.objects.first()
+        store_lat = getattr(site_settings, 'latitude', None)
+        store_lng = getattr(site_settings, 'longitude', None)
+
+        cust_lat, cust_lng = None, None
+        if address_id:
+            try:
+                addr = Address.objects.get(id=address_id)
+                cust_lat, cust_lng = addr.latitude, addr.longitude
+            except Address.DoesNotExist:
+                pass
+
+        if (cust_lat is None or cust_lng is None) and lat and lng:
+            try:
+                cust_lat, cust_lng = float(lat), float(lng)
+            except (ValueError, TypeError):
+                pass
+
+        distance_km = 0.0
+        if store_lat and store_lng and cust_lat and cust_lng:
+            distance_km = calculate_haversine_distance_km(store_lat, store_lng, cust_lat, cust_lng)
+
+        fee = calculate_delivery_fee(distance_km, subtotal, site_settings)
+
+        return Response({
+            'status': True,
+            'data': {
+                'distance_km': distance_km,
+                'delivery_fee': float(fee),
+                'base_delivery_charge': float(getattr(site_settings, 'base_delivery_charge', 20.00) or 20.00),
+                'base_delivery_distance': float(getattr(site_settings, 'base_delivery_distance', 1.0) or 1.0),
+                'per_km_charge': float(getattr(site_settings, 'per_km_charge', 10.00) or 10.00),
+                'free_delivery_threshold': float(site_settings.free_delivery_threshold) if getattr(site_settings, 'free_delivery_threshold', None) is not None else None,
+                'is_free': bool(fee == Decimal('0.00')),
+            }
+        })
 
 
 # ============================================================
@@ -709,12 +769,52 @@ class StaffDashboardAnalyticsView(APIView):
                 'created_at': o.created_at.isoformat(),
             })
 
+        # 8b. Fleet Distance & Delivery Boy Ride Analytics
+        delivered_orders_in_period = period_orders.filter(status='delivered')
+        total_period_km = float(delivered_orders_in_period.aggregate(s=Sum('delivery_distance_km'))['s'] or 0.0)
+
+        today_date = timezone.localdate()
+        today_delivered_qs = Order.objects.filter(status='delivered', created_at__date=today_date)
+        today_fleet_km = float(today_delivered_qs.aggregate(s=Sum('delivery_distance_km'))['s'] or 0.0)
+
+        avg_km_per_order = round(total_period_km / delivered_count, 1) if delivered_count > 0 else 0.0
+
+        from django.contrib.auth import get_user_model
+        UserModel = get_user_model()
+        riders = UserModel.objects.filter(role='delivery_boy', is_active=True).select_related('delivery_profile')
+        fleet_riders = []
+        for r in riders:
+            r_name = (r.get_full_name() or r.username).strip()
+            r_today_km = round(float(r.deliveries.filter(status='delivered', delivered_at__date=today_date).aggregate(s=Sum('order__delivery_distance_km'))['s'] or 0.0), 1)
+            r_period_km = round(float(r.deliveries.filter(status='delivered', delivered_at__gte=start_date, delivered_at__lte=end_date).aggregate(s=Sum('order__delivery_distance_km'))['s'] or 0.0), 1)
+            r_total_km = round(float(r.deliveries.filter(status='delivered').aggregate(s=Sum('order__delivery_distance_km'))['s'] or 0.0), 1)
+            r_delivered_count = r.deliveries.filter(status='delivered', delivered_at__gte=start_date, delivered_at__lte=end_date).count()
+            fleet_riders.append({
+                'id': r.id,
+                'name': r_name,
+                'employee_id': getattr(r, 'employee_id', None) or f"DB-{r.id}",
+                'vehicle_number': getattr(getattr(r, 'delivery_profile', None), 'vehicle_number', None) or 'N/A',
+                'today_km': r_today_km,
+                'period_km': r_period_km,
+                'total_km': r_total_km,
+                'delivered_count': r_delivered_count,
+            })
+        fleet_riders.sort(key=lambda x: x['period_km'], reverse=True)
+
+        fleet_distance_metrics = {
+            'period_fleet_km': round(total_period_km, 1),
+            'today_fleet_km': round(today_fleet_km, 1),
+            'avg_km_per_order': avg_km_per_order,
+            'riders': fleet_riders,
+        }
+
         return Response({
             'status': True,
             'data': {
                 'period': period,
                 'period_label': period_label,
                 'comparison_label': comparison_label,
+                'fleet_distance': fleet_distance_metrics,
                 'kpis': {
                     'total_revenue': total_revenue,
                     'revenue_growth_pct': revenue_growth_pct,

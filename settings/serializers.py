@@ -61,6 +61,30 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         allow_null=True
     )
 
+    baseDeliveryCharge = serializers.DecimalField(
+        source='base_delivery_charge',
+        max_digits=6,
+        decimal_places=2,
+        required=False
+    )
+    baseDeliveryDistance = serializers.FloatField(
+        source='base_delivery_distance',
+        required=False
+    )
+    perKmCharge = serializers.DecimalField(
+        source='per_km_charge',
+        max_digits=6,
+        decimal_places=2,
+        required=False
+    )
+    freeDeliveryThreshold = serializers.DecimalField(
+        source='free_delivery_threshold',
+        max_digits=8,
+        decimal_places=2,
+        required=False,
+        allow_null=True
+    )
+
     footerDescription = serializers.CharField(
         source='footer_description',
         allow_blank=True,
@@ -129,6 +153,10 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             'latitude',
             'longitude',
             'deliveryRadius',
+            'baseDeliveryCharge',
+            'baseDeliveryDistance',
+            'perKmCharge',
+            'freeDeliveryThreshold',
             'footerDescription',
             'workingHours',
             'socials',
@@ -177,6 +205,11 @@ class SiteSettingSerializer(serializers.ModelSerializer):
                 else ""
             )
         }
+
+        data['base_delivery_charge'] = float(instance.base_delivery_charge or 0.0)
+        data['base_delivery_distance'] = float(instance.base_delivery_distance or 1.0)
+        data['per_km_charge'] = float(instance.per_km_charge or 0.0)
+        data['free_delivery_threshold'] = float(instance.free_delivery_threshold) if instance.free_delivery_threshold is not None else None
 
         return data
 
