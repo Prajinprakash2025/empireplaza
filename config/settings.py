@@ -149,13 +149,33 @@ else:
         "http://187.127.167.18:3000",
         "http://187.127.167.18:3001",
         "http://187.127.167.18:3002",
+        "https://grandeplaza.com",
+        "https://www.grandeplaza.com",
+        "https://admin.grandeplaza.com",
+        "https://delivery.grandeplaza.com",
+        "http://grandeplaza.com",
+        "http://www.grandeplaza.com",
+        "http://admin.grandeplaza.com",
+        "http://delivery.grandeplaza.com",
     ]
 
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://187.127.167.18",
-]
+csrf_origins_env = os.getenv('CSRF_TRUSTED_ORIGINS')
+if csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://187.127.167.18",
+        "https://grandeplaza.com",
+        "https://www.grandeplaza.com",
+        "https://admin.grandeplaza.com",
+        "https://delivery.grandeplaza.com",
+        "http://grandeplaza.com",
+        "http://www.grandeplaza.com",
+        "http://admin.grandeplaza.com",
+        "http://delivery.grandeplaza.com",
+    ]
 
 CORS_ALLOW_CREDENTIALS = True
 
