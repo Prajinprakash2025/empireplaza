@@ -114,6 +114,11 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         required=False
     )
 
+    isCodEnabled = serializers.BooleanField(
+        source='is_cod_enabled',
+        required=False
+    )
+
     isOpen = serializers.BooleanField(
         source='is_open',
         read_only=True
@@ -164,6 +169,8 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             'closingTime',
             'isManuallyOpen',
             'isOpen',
+            'isCodEnabled',
+            'is_cod_enabled',
         ]
 
     # Backend data -> Frontend React format
@@ -216,6 +223,8 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         data['delivery_radius'] = float(instance.delivery_radius or 0.0)
         data['opening_time'] = str(instance.opening_time) if instance.opening_time else None
         data['closing_time'] = str(instance.closing_time) if instance.closing_time else None
+        data['is_cod_enabled'] = bool(instance.is_cod_enabled)
+        data['isCodEnabled'] = bool(instance.is_cod_enabled)
 
         return data
 

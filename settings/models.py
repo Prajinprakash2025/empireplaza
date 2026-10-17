@@ -63,6 +63,12 @@ class SiteSetting(models.Model):
         help_text="Turn OFF to manually close the restaurant immediately."
     )
 
+    # Cash on Delivery Control (Default: False / Disabled)
+    is_cod_enabled = models.BooleanField(
+        default=False,
+        help_text="Allow customers to place Cash on Delivery (COD) orders."
+    )
+
     # Social Media
     instagram_url = models.URLField(
         max_length=500, blank=True, null=True, default=""

@@ -324,6 +324,12 @@ class CheckoutSerializer(serializers.Serializer):
         default=''
     )
 
+    payment_method = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default='online'
+    )
+
     def validate(self, attrs):
 
         user = self.context['request'].user
@@ -383,7 +389,17 @@ class CheckoutSerializer(serializers.Serializer):
                     )
 
         # -----------------------------------------
-        # 4. CHECK ITEM AVAILABILITY
+        # 4. CHECK CASH ON DELIVERY (COD) STATUS
+        # -----------------------------------------
+        payment_method = attrs.get('payment_method', 'online')
+        if payment_method == 'cod':
+            if site_settings and not site_settings.is_cod_enabled:
+                raise serializers.ValidationError(
+                    "Cash on Delivery is currently disabled by Empire Plaza. Please choose an online payment method."
+                )
+
+        # -----------------------------------------
+        # 5. CHECK ITEM AVAILABILITY
         # -----------------------------------------
 
         for item in cart.items.all():
@@ -517,6 +533,13 @@ class CheckoutSerializer(serializers.Serializer):
         # 6. CREATE ORDER
         # -----------------------------------------
 
+        payment_method = self.validated_data.get('payment_method', 'online')
+        initial_payment_status = (
+            'pending'
+            if (payment_method == 'cod' and site_settings and site_settings.is_cod_enabled)
+            else 'completed'
+        )
+
         order = Order.objects.create(
             user=user,
             customer_name=customer_name,
@@ -527,7 +550,7 @@ class CheckoutSerializer(serializers.Serializer):
             delivery_fee=delivery_fee,
             delivery_distance_km=distance_km,
             status='preparing',
-            payment_status='pending',
+            payment_status=initial_payment_status,
         )
 
         # -----------------------------------------

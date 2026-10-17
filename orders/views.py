@@ -274,6 +274,7 @@ class DeliveryEstimateView(APIView):
                 'radius_message': radius_message,
                 'is_store_open': is_store_open,
                 'is_open': is_store_open,
+                'is_cod_enabled': bool(getattr(site_settings, 'is_cod_enabled', False)),
                 'base_delivery_charge': float(getattr(site_settings, 'base_delivery_charge', 20.00) or 20.00),
                 'base_delivery_distance': float(getattr(site_settings, 'base_delivery_distance', 1.0) or 1.0),
                 'per_km_charge': float(getattr(site_settings, 'per_km_charge', 10.00) or 10.00),
