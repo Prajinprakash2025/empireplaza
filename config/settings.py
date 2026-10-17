@@ -29,6 +29,9 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',')] if allowed_hosts_env else ['*']
 
+# Support HTTPS reverse proxy headers from Nginx
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 
 
 # Application definition
@@ -212,7 +215,12 @@ SESSION_COOKIE_AGE = 30 * 24 * 60 * 60  # 2,592,000 seconds (30 days)
 import os
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-PUBLIC_MEDIA_URL = os.getenv('PUBLIC_MEDIA_URL', 'http://187.127.167.18')
+_public_media = os.getenv('PUBLIC_MEDIA_URL') or os.getenv('MEDIA_URL') or 'https://grandeplaza.com'
+if _public_media.endswith('/media/'):
+    _public_media = _public_media[:-7]
+elif _public_media.endswith('/media'):
+    _public_media = _public_media[:-6]
+PUBLIC_MEDIA_URL = _public_media.rstrip('/')
 
 
 APPEND_SLASH = False

@@ -3,6 +3,22 @@ from django.db import transaction
 from .models import Category, MenuItem, MenuItemVariant
 
 
+def resolve_media_url(request, image_field):
+    if not image_field:
+        return None
+    try:
+        url = image_field.url
+    except Exception:
+        return None
+    if url.startswith('http://') or url.startswith('https://'):
+        return url
+    if request:
+        return request.build_absolute_uri(url)
+    from django.conf import settings
+    base_url = getattr(settings, 'PUBLIC_MEDIA_URL', 'https://grandeplaza.com').rstrip('/')
+    return f"{base_url}{url}"
+
+
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
@@ -11,9 +27,7 @@ class CategorySerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         ret = super().to_representation(instance)
         if instance.image:
-            from django.conf import settings
-            base_url = getattr(settings, 'PUBLIC_MEDIA_URL', 'http://187.127.167.18').rstrip('/')
-            ret['image'] = f"{base_url}{instance.image.url}"
+            ret['image'] = resolve_media_url(self.context.get('request'), instance.image)
         return ret
 
 
@@ -95,9 +109,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         ret = super().to_representation(instance)
         if instance.image:
-            from django.conf import settings
-            base_url = getattr(settings, 'PUBLIC_MEDIA_URL', 'http://187.127.167.18').rstrip('/')
-            ret['image'] = f"{base_url}{instance.image.url}"
+            ret['image'] = resolve_media_url(self.context.get('request'), instance.image)
         return ret
 
     # ============================================================

@@ -36,9 +36,8 @@ class CartMenuItemMinimalSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         ret = super().to_representation(instance)
         if instance.image:
-            from django.conf import settings
-            base_url = getattr(settings, 'PUBLIC_MEDIA_URL', 'http://187.127.167.18').rstrip('/')
-            ret['image'] = f"{base_url}{instance.image.url}"
+            from menu.serializers import resolve_media_url
+            ret['image'] = resolve_media_url(self.context.get('request'), instance.image)
         return ret
 
 
