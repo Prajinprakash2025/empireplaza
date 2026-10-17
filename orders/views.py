@@ -13,7 +13,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.permissions import IsEmployee
+from accounts.permissions import IsEmployee, IsAdminRole
 
 from .models import Cart, CartItem, Order, OrderItem
 from .serializers import (
@@ -506,7 +506,7 @@ class CartMergeView(APIView):
 # ============================================================
 
 class StaffDashboardAnalyticsView(APIView):
-    permission_classes = [IsEmployee]
+    permission_classes = [IsAdminRole]
 
     def get(self, request):
         period = request.query_params.get('period', 'today').lower()

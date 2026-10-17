@@ -406,6 +406,25 @@ class StaffAndAdminLoginView(APIView):
             secure=False
         )
 
+        # Set verified user_role and username cookies for frontend permissions & routing
+        response.set_cookie(
+            key='user_role',
+            value=user.role,
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=False,
+            samesite='Lax',
+            secure=False
+        )
+        response.set_cookie(
+            key='username',
+            value=user.username,
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=False,
+            samesite='Lax',
+            secure=False
+        )
 
         return response
 
@@ -595,6 +614,8 @@ class LogoutView(APIView):
         response = Response({"message": "Logged out successfully"}, status=status.HTTP_200_OK)
         response.delete_cookie('access_token', path='/')
         response.delete_cookie('refresh_token', path='/')
+        response.delete_cookie('user_role', path='/')
+        response.delete_cookie('username', path='/')
         return response
     
 from .serializers import (
