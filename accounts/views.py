@@ -69,19 +69,35 @@ class SignUpView(APIView):
 # 3. 🌟 NEW: Customer Profile & Address View (Address update cheyyaan):
 class UserProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response({
             "status": True,
             "data": serializer.data
         }, status=status.HTTP_200_OK)
+
     def patch(self, request):
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+
+        # Support 'name' or 'full_name' alias for 'first_name'
+        if 'name' in data and not data.get('first_name'):
+            data['first_name'] = data['name']
+        elif 'full_name' in data and not data.get('first_name'):
+            data['first_name'] = data['full_name']
+
+        # Prevent tampering with phone_number, role, is_verified, or id
+        data.pop('phone_number', None)
+        data.pop('role', None)
+        data.pop('is_verified', None)
+        data.pop('id', None)
+
+        serializer = UserSerializer(request.user, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({
             "status": True,
-            "message": "Profile & Address updated successfully!",
+            "message": "Profile updated successfully!",
             "data": serializer.data
         }, status=status.HTTP_200_OK)
 

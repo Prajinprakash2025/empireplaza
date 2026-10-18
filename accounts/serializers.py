@@ -5,11 +5,15 @@ from .models import CustomUser, DeliveryBoyProfile,Address
 
 User = get_user_model()
 
-# 1. Update UserSerializer (first_name, email koodi include cheythu):
+# 1. Update UserSerializer (first_name, email, name, read_only_fields):
 class UserSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='first_name', read_only=True)
+    full_name = serializers.CharField(source='first_name', read_only=True)
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'email', 'phone_number', 'role', 'address', 'is_verified']
+        fields = ['id', 'username', 'first_name', 'name', 'full_name', 'email', 'phone_number', 'role', 'address', 'is_verified']
+        read_only_fields = ['id', 'phone_number', 'role', 'is_verified']
 
 
 # 2. 🌟 NEW: Customer Sign Up Serializer:
