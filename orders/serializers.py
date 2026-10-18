@@ -374,18 +374,35 @@ class CheckoutSerializer(serializers.Serializer):
             )
 
         if site_settings and site_settings.delivery_radius and float(site_settings.delivery_radius) > 0:
-            if address.latitude and address.longitude and site_settings.latitude and site_settings.longitude:
+            max_radius = float(site_settings.delivery_radius)
+            cust_lat = address.latitude
+            cust_lng = address.longitude
+
+            # If address has no coordinates, attempt fallback geocoding
+            if not cust_lat or not cust_lng or (cust_lat == 0 and cust_lng == 0):
+                from .distance_utils import geocode_address
+                g_lat, g_lng = geocode_address(address.address_line, address.city, address.pincode)
+                if g_lat and g_lng:
+                    cust_lat, cust_lng = g_lat, g_lng
+                    address.latitude = g_lat
+                    address.longitude = g_lng
+                    address.save(update_fields=['latitude', 'longitude'])
+
+            if cust_lat and cust_lng and site_settings.latitude and site_settings.longitude:
                 distance_km = calculate_haversine_distance_km(
                     site_settings.latitude,
                     site_settings.longitude,
-                    address.latitude,
-                    address.longitude,
+                    cust_lat,
+                    cust_lng,
                 )
-                max_radius = float(site_settings.delivery_radius)
                 if distance_km > max_radius:
                     raise serializers.ValidationError(
                         f"Delivery unavailable: Your address is {distance_km:.1f} KM away, exceeding our maximum delivery radius of {max_radius:.1f} KM."
                     )
+            elif site_settings.latitude and site_settings.longitude:
+                raise serializers.ValidationError(
+                    f"Delivery location coordinates required. Please ensure your delivery address has a pin on the map within {max_radius:.1f} KM of Empire Plaza."
+                )
 
         # -----------------------------------------
         # 4. CHECK PAYMENT METHOD & SECURITY

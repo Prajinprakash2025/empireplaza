@@ -240,6 +240,14 @@ class DeliveryEstimateView(APIView):
             try:
                 addr = Address.objects.get(id=address_id)
                 cust_lat, cust_lng = addr.latitude, addr.longitude
+                if (cust_lat is None or cust_lng is None or (cust_lat == 0 and cust_lng == 0)):
+                    from .distance_utils import geocode_address
+                    g_lat, g_lng = geocode_address(addr.address_line, addr.city, addr.pincode)
+                    if g_lat and g_lng:
+                        cust_lat, cust_lng = g_lat, g_lng
+                        addr.latitude = g_lat
+                        addr.longitude = g_lng
+                        addr.save(update_fields=['latitude', 'longitude'])
             except Address.DoesNotExist:
                 pass
 
@@ -257,10 +265,14 @@ class DeliveryEstimateView(APIView):
         is_store_open = site_settings.is_open if site_settings else True
         is_within_radius = True
         radius_message = ""
-        if delivery_radius > 0 and distance_km > 0:
-            if distance_km > delivery_radius:
+        if delivery_radius > 0:
+            if store_lat and store_lng and cust_lat and cust_lng and distance_km > 0:
+                if distance_km > delivery_radius:
+                    is_within_radius = False
+                    radius_message = f"Delivery unavailable: Your address is {distance_km:.1f} KM away, exceeding our maximum delivery radius of {delivery_radius:.1f} KM."
+            elif (cust_lat is None or cust_lng is None) and (address_id or (lat and lng)):
                 is_within_radius = False
-                radius_message = f"Delivery unavailable: Your address is {distance_km} KM away, exceeding our maximum delivery radius of {delivery_radius} KM."
+                radius_message = "Delivery location pin required: Please pin your exact location on the map to confirm delivery eligibility."
 
         fee = calculate_delivery_fee(distance_km, subtotal, site_settings)
 
@@ -941,14 +953,49 @@ class RazorpayCreateOrderView(APIView):
                 try:
                     addr = Address.objects.get(id=address_id, user=request.user)
                     site_settings = SiteSetting.objects.first()
-                    if site_settings and site_settings.latitude and site_settings.longitude and addr.latitude and addr.longitude:
-                        dist_km = calculate_haversine_distance_km(
-                            site_settings.latitude, site_settings.longitude,
-                            addr.latitude, addr.longitude
-                        )
-                        delivery_fee = calculate_delivery_fee(dist_km, site_settings, subtotal)
-                except Exception:
-                    pass
+
+                    if site_settings and not site_settings.is_open:
+                        return Response({
+                            "status": False,
+                            "error": "Empire Plaza is currently closed for online orders."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                    max_radius = float(getattr(site_settings, 'delivery_radius', 0.0) or 0.0)
+                    cust_lat = addr.latitude
+                    cust_lng = addr.longitude
+
+                    if (cust_lat is None or cust_lng is None or (cust_lat == 0 and cust_lng == 0)):
+                        from .distance_utils import geocode_address
+                        g_lat, g_lng = geocode_address(addr.address_line, addr.city, addr.pincode)
+                        if g_lat and g_lng:
+                            cust_lat, cust_lng = g_lat, g_lng
+                            addr.latitude = g_lat
+                            addr.longitude = g_lng
+                            addr.save(update_fields=['latitude', 'longitude'])
+
+                    if site_settings and site_settings.latitude and site_settings.longitude:
+                        if cust_lat and cust_lng:
+                            dist_km = calculate_haversine_distance_km(
+                                site_settings.latitude, site_settings.longitude,
+                                cust_lat, cust_lng
+                            )
+                            if max_radius > 0 and dist_km > max_radius:
+                                return Response({
+                                    "status": False,
+                                    "error": f"Delivery unavailable: Your address is {dist_km:.1f} KM away, exceeding our maximum delivery radius of {max_radius:.1f} KM."
+                                }, status=status.HTTP_400_BAD_REQUEST)
+
+                            delivery_fee = calculate_delivery_fee(dist_km, subtotal, site_settings)
+                        elif max_radius > 0:
+                            return Response({
+                                "status": False,
+                                "error": f"Delivery location coordinates required. Your address must be verified within {max_radius:.1f} KM of Empire Plaza."
+                            }, status=status.HTTP_400_BAD_REQUEST)
+                except Address.DoesNotExist:
+                    return Response({
+                        "status": False,
+                        "error": "Selected delivery address does not exist."
+                    }, status=status.HTTP_400_BAD_REQUEST)
 
             total_amount = subtotal + delivery_fee
             amount_in_paise = int(round(float(total_amount) * 100))
