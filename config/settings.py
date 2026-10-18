@@ -237,3 +237,7 @@ TWOFACTOR_API_KEY = os.getenv('TWOFACTOR_API_KEY', 'b6e4bcf9-bdc3-11f1-af74-0200
 # Google Firebase Configuration (Free 10,000 Phone OTP SMS/month)
 FIREBASE_API_KEY = os.getenv('FIREBASE_API_KEY', 'AIzaSyB0fsdU-KIpSmrJT5PHQEib86v1HABh30M')
 
+# Razorpay Payment Gateway Configuration
+RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID', '')
+RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET', '')
+

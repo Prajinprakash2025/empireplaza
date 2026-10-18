@@ -20,6 +20,9 @@ urlpatterns = [
     path('staff/orders/<int:pk>/status', views.StaffOrderStatusUpdateView.as_view(), name='staff-order-status-update'),
     path('staff/dashboard-analytics', views.StaffDashboardAnalyticsView.as_view(), name='staff-dashboard-analytics'),
 
-    path('cart/merge', views.CartMergeView.as_view(), name='cart-merge'),  # 👈 🌟 NEW MERGE ROUTE
+    path('cart/merge', views.CartMergeView.as_view(), name='cart-merge'),
 
+    # --- 💳 RAZORPAY PAYMENT GATEWAY ---
+    path('create-order', views.RazorpayCreateOrderView.as_view(), name='razorpay-create-order'),
+    path('verify-payment', views.RazorpayVerifyPaymentView.as_view(), name='razorpay-verify-payment'),
 ]

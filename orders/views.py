@@ -867,3 +867,215 @@ class StaffDashboardAnalyticsView(APIView):
                 'recent_orders': recent_orders,
             }
         })
+
+# ============================================================
+# 💳 RAZORPAY PAYMENT GATEWAY INTEGRATION
+# ============================================================
+
+class RazorpayCreateOrderView(APIView):
+    """
+    Creates a Razorpay Order ID for standard web checkout.
+    Endpoint: POST /api/create-order or /api/orders/create-order
+    Amount is validated to be at least 100 paise (₹1).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        import hmac
+        import hashlib
+        import razorpay
+        from django.conf import settings
+
+        amount_val = request.data.get('amount')
+        currency = request.data.get('currency', 'INR')
+        receipt = request.data.get('receipt')
+
+        key_id = getattr(settings, 'RAZORPAY_KEY_ID', '')
+        key_secret = getattr(settings, 'RAZORPAY_KEY_SECRET', '')
+
+        if not key_id or not key_secret:
+            return Response({
+                'status': False,
+                'error': 'Razorpay credentials not configured on server.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        amount_in_paise = 0
+
+        if amount_val is not None:
+            try:
+                amount_num = float(amount_val)
+                if request.data.get('amount_is_paise'):
+                    amount_in_paise = int(amount_num)
+                else:
+                    amount_in_paise = int(round(amount_num * 100))
+            except (ValueError, TypeError):
+                return Response({
+                    'status': False,
+                    'error': 'Invalid amount value provided.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            cart = Cart.objects.filter(user=request.user).first()
+            if not cart or not cart.items.exists():
+                return Response({
+                    'status': False,
+                    'error': 'Cart is empty. Cannot create payment order.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            subtotal = Decimal('0.00')
+            for item in cart.items.select_related('menu_item', 'variant'):
+                price = (
+                    item.variant.offer_price or item.variant.actual_price
+                    if item.variant
+                    else item.menu_item.offer_price or item.menu_item.actual_price
+                ) or Decimal('0.00')
+                pkg = (
+                    item.variant.packing_charge
+                    if item.variant and item.variant.packing_charge is not None
+                    else item.menu_item.packing_charge
+                ) or Decimal('0.00')
+                subtotal += (Decimal(str(price)) + Decimal(str(pkg))) * item.quantity
+
+            delivery_fee = Decimal('0.00')
+            address_id = request.data.get('address_id')
+            if address_id:
+                try:
+                    addr = Address.objects.get(id=address_id, user=request.user)
+                    site_settings = SiteSetting.objects.first()
+                    if site_settings and site_settings.latitude and site_settings.longitude and addr.latitude and addr.longitude:
+                        dist_km = calculate_haversine_distance_km(
+                            site_settings.latitude, site_settings.longitude,
+                            addr.latitude, addr.longitude
+                        )
+                        delivery_fee = calculate_delivery_fee(dist_km, site_settings, subtotal)
+                except Exception:
+                    pass
+
+            total_amount = subtotal + delivery_fee
+            amount_in_paise = int(round(float(total_amount) * 100))
+
+        if amount_in_paise < 100:
+            return Response({
+                'status': False,
+                'error': 'Minimum amount must be at least 100 paise (₹1).'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not receipt:
+            receipt = f"rcpt_{request.user.id}_{int(datetime.now().timestamp())}"[:40]
+
+        try:
+            client = razorpay.Client(auth=(key_id, key_secret))
+            client.set_app_details({"title": "Grand Plaza", "version": "1.0"})
+            order_data = {
+                "amount": amount_in_paise,
+                "currency": currency,
+                "receipt": receipt,
+                "payment_capture": 1
+            }
+            rzp_order = client.order.create(data=order_data)
+
+            return Response({
+                "status": True,
+                "order_id": rzp_order.get("id"),
+                "amount": rzp_order.get("amount"),
+                "currency": rzp_order.get("currency"),
+                "key_id": key_id
+            }, status=status.HTTP_200_OK)
+
+        except razorpay.errors.BadRequestError as e:
+            return Response({
+                "status": False,
+                "error": f"Razorpay bad request: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except razorpay.errors.SignatureVerificationError:
+            return Response({
+                "status": False,
+                "error": "Authentication with Razorpay failed. Check credentials."
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception as e:
+            err_msg = str(e)
+            if "authentication" in err_msg.lower() or "401" in err_msg:
+                return Response({
+                    "status": False,
+                    "error": "Authentication with Razorpay failed."
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({
+                "status": False,
+                "error": f"Failed to create Razorpay order: {err_msg}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class RazorpayVerifyPaymentView(APIView):
+    """
+    Verifies Razorpay HMAC-SHA256 signature and completes the order checkout.
+    Endpoint: POST /api/verify-payment or /api/orders/verify-payment
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        import hmac
+        import hashlib
+        from django.conf import settings
+
+        razorpay_order_id = request.data.get('razorpay_order_id')
+        razorpay_payment_id = request.data.get('razorpay_payment_id')
+        razorpay_signature = request.data.get('razorpay_signature')
+
+        if not razorpay_order_id or not razorpay_payment_id or not razorpay_signature:
+            return Response({
+                "status": False,
+                "error": "Missing required fields: razorpay_order_id, razorpay_payment_id, and razorpay_signature are required."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        key_secret = getattr(settings, 'RAZORPAY_KEY_SECRET', '')
+        if not key_secret:
+            return Response({
+                "status": False,
+                "error": "Razorpay secret key not configured on server."
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        msg = f"{razorpay_order_id}|{razorpay_payment_id}".encode('utf-8')
+        generated_signature = hmac.new(
+            key_secret.encode('utf-8'),
+            msg,
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(generated_signature, razorpay_signature):
+            return Response({
+                "status": False,
+                "error": "Signature verification failed. Payment is invalid and has NOT been marked as paid."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        address_id = request.data.get('address_id')
+        special_instructions = request.data.get('special_instructions', '')
+
+        order_data = None
+        if address_id:
+            checkout_data = {
+                'address_id': address_id,
+                'special_instructions': special_instructions,
+                'payment_method': 'online',
+            }
+            serializer = CheckoutSerializer(
+                data=checkout_data,
+                context={'request': request}
+            )
+            serializer.is_valid(raise_exception=True)
+            order = serializer.save()
+            order.payment_status = 'completed'
+            order.status = 'preparing'
+            order.save(update_fields=['payment_status', 'status'])
+
+            order_data = OrderReadSerializer(order, context={'request': request}).data
+            trigger_order_event('new-order', order_data)
+
+        return Response({
+            "status": True,
+            "message": "Payment verified and order placed successfully.",
+            "data": {
+                "verified": True,
+                "razorpay_payment_id": razorpay_payment_id,
+                "razorpay_order_id": razorpay_order_id,
+                "order": order_data
+            }
+        }, status=status.HTTP_200_OK)
