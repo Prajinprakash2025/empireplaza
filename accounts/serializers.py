@@ -122,7 +122,10 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
 class DeliveryBoyProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeliveryBoyProfile
-        fields = ['vehicle_number', 'is_on_duty', 'is_busy', 'current_latitude', 'current_longitude']
+        fields = [
+            'vehicle_number', 'is_on_duty', 'is_busy', 
+            'current_latitude', 'current_longitude', 'last_location_updated_at'
+        ]
 
 
 class DeliveryBoyUserSerializer(serializers.ModelSerializer):

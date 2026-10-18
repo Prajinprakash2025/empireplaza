@@ -706,10 +706,18 @@ class DeliveryBoyLoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        # Single active device session enforcement
+        import uuid
+        profile, _ = DeliveryBoyProfile.objects.get_or_create(user=user)
+        new_session_token = uuid.uuid4().hex
+        profile.active_session_token = new_session_token
+        profile.save(update_fields=['active_session_token'])
+
         refresh = get_tokens_for_user(user)
 
         response = Response({
             "message": "Delivery Boy logged in successfully",
+            "session_token": new_session_token,
             "user": DeliveryBoyUserSerializer(user).data
         }, status=status.HTTP_200_OK)
 
@@ -732,7 +740,15 @@ class DeliveryBoyLoginView(APIView):
             samesite='Lax',
             secure=False
         )
-
+        response.set_cookie(
+            key='delivery_session_token',
+            value=new_session_token,
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=True,
+            samesite='Lax',
+            secure=False
+        )
 
         return response
 

@@ -65,6 +65,8 @@ class DeliveryBoyProfile(models.Model):
     is_busy = models.BooleanField(default=False)    # Free / Delivering an order status
     current_latitude = models.FloatField(blank=True, null=True)
     current_longitude = models.FloatField(blank=True, null=True)
+    last_location_updated_at = models.DateTimeField(blank=True, null=True)
+    active_session_token = models.CharField(max_length=64, blank=True, null=True)
 
     def __str__(self):
         return f"{self.user.username} Profile ({self.user.employee_id})"

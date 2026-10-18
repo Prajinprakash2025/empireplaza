@@ -218,6 +218,14 @@ class ToggleDutyView(APIView):
         profile.is_on_duty = not profile.is_on_duty
         profile.save(update_fields=['is_on_duty'])
 
+        # Broadcast real-time duty status (Online / Offline) to Admin Fleet Map & Customers
+        trigger_order_event('delivery-duty-updated', {
+            'delivery_boy_id': request.user.id,
+            'is_on_duty': profile.is_on_duty,
+            'latitude': profile.current_latitude,
+            'longitude': profile.current_longitude,
+        })
+
         return Response({
             "status": True,
             "is_on_duty": profile.is_on_duty,
@@ -280,13 +288,23 @@ class UpdateLocationView(APIView):
 
         try:
             profile = request.user.delivery_profile
+            
+            # Multi-device conflict prevention: If another phone logged in, stop this phone
+            device_token = request.headers.get('X-Device-Session') or request.COOKIES.get('delivery_session_token')
+            if profile.active_session_token and device_token and profile.active_session_token != device_token:
+                return Response(
+                    {"error": "Session expired. Your account was logged in on another device."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+
             profile.current_latitude = float(latitude)
             profile.current_longitude = float(longitude)
-            profile.save(update_fields=['current_latitude', 'current_longitude'])
+            profile.last_location_updated_at = timezone.now()
+            profile.save(update_fields=['current_latitude', 'current_longitude', 'last_location_updated_at'])
         except Exception:
             return Response({"error": "Delivery profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Broadcast live location for customers tracking their active orders
+        # Broadcast live location for customers tracking their active orders and Admin Fleet Map
         active_order_ids = list(
             Delivery.objects.filter(
                 delivery_boy=request.user,
@@ -294,11 +312,22 @@ class UpdateLocationView(APIView):
             ).values_list('order_id', flat=True)
         )
 
+        last_seen_iso = profile.last_location_updated_at.isoformat()
+
         trigger_order_event('delivery-location-updated', {
             'delivery_boy_id': request.user.id,
             'latitude': float(latitude),
             'longitude': float(longitude),
+            'is_on_duty': profile.is_on_duty,
+            'is_busy': profile.is_busy,
+            'last_seen': last_seen_iso,
             'active_order_ids': active_order_ids
         })
 
-        return Response({"status": True, "latitude": float(latitude), "longitude": float(longitude)})
+        return Response({
+            "status": True, 
+            "latitude": float(latitude), 
+            "longitude": float(longitude),
+            "is_on_duty": profile.is_on_duty,
+            "last_seen": last_seen_iso
+        })
