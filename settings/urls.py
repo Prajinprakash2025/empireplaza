@@ -8,4 +8,8 @@ urlpatterns = [
         SiteSettingRetrieveUpdateView.as_view(),
         name='site-settings'
     ),
+    path(
+        'site-settings/',
+        SiteSettingRetrieveUpdateView.as_view()
+    ),
 ]
