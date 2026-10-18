@@ -612,14 +612,47 @@ class CookieTokenRefreshView(APIView):
 class LogoutView(APIView):
     """
     Allows anyone (even with expired tokens) to logout and clear cookies safely.
+    If a delivery boy logs out, automatically marks them offline and broadcasts to admin fleet map.
     """
     authentication_classes = []
     permission_classes = [permissions.AllowAny]  # Allowed for all to prevent 401 on expired tokens
 
     def post(self, request):
+        # Extract user if available to mark delivery boy offline
+        user = None
+        token = request.COOKIES.get('access_token')
+        if token:
+            try:
+                from rest_framework_simplejwt.tokens import AccessToken
+                validated_token = AccessToken(token)
+                from accounts.models import CustomUser
+                user = CustomUser.objects.filter(id=validated_token['user_id']).first()
+            except Exception:
+                pass
+
+        if user and getattr(user, 'role', '') == 'delivery_boy':
+            try:
+                profile = getattr(user, 'delivery_profile', None)
+                if profile:
+                    profile.is_on_duty = False
+                    profile.save(update_fields=['is_on_duty'])
+
+                    # Broadcast real-time duty offline status to Admin Fleet Map & Customers
+                    from orders.pusher_utils import trigger_order_event
+                    trigger_order_event('delivery-duty-updated', {
+                        'delivery_boy_id': user.id,
+                        'is_on_duty': False,
+                        'latitude': profile.current_latitude,
+                        'longitude': profile.current_longitude,
+                    })
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Error marking delivery boy offline on logout: {e}")
+
         response = Response({"message": "Logged out successfully"}, status=status.HTTP_200_OK)
         response.delete_cookie('access_token', path='/')
         response.delete_cookie('refresh_token', path='/')
+        response.delete_cookie('delivery_session_token', path='/')
         response.delete_cookie('user_role', path='/')
         response.delete_cookie('username', path='/')
         return response
