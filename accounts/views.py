@@ -202,9 +202,12 @@ class VerifyOTPView(APIView):
 
         refresh = get_tokens_for_user(user)
 
+        user_name = user.first_name if user.first_name else ""
+        welcome_message = f"Welcome back, {user_name}!" if user_name else "Welcome to Empire Plaza!"
+
         response = Response({
             "status": True,
-            "message": "OTP verified successfully",
+            "message": welcome_message,
             "access_token": str(refresh.access_token),
             "refresh_token": str(refresh),
             "user": UserSerializer(user).data
@@ -308,9 +311,12 @@ class FirebaseVerifyView(APIView):
 
         refresh = get_tokens_for_user(user)
 
+        user_name = user.first_name if user.first_name else ""
+        welcome_message = f"Welcome back, {user_name}!" if user_name else "Welcome to Empire Plaza!"
+
         response = Response({
             "status": True,
-            "message": "Logged in successfully via Firebase Phone OTP",
+            "message": welcome_message,
             "access_token": str(refresh.access_token),
             "refresh_token": str(refresh),
             "user": UserSerializer(user).data
