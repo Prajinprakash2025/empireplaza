@@ -1058,7 +1058,7 @@ class RazorpayVerifyPaymentView(APIView):
             }
             serializer = CheckoutSerializer(
                 data=checkout_data,
-                context={'request': request}
+                context={'request': request, 'verified_online_payment': True}
             )
             serializer.is_valid(raise_exception=True)
             order = serializer.save()

@@ -388,7 +388,7 @@ class CheckoutSerializer(serializers.Serializer):
                     )
 
         # -----------------------------------------
-        # 4. CHECK CASH ON DELIVERY (COD) STATUS
+        # 4. CHECK PAYMENT METHOD & SECURITY
         # -----------------------------------------
         payment_method = attrs.get('payment_method', 'online')
         if payment_method == 'cod':
@@ -396,6 +396,10 @@ class CheckoutSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     "Cash on Delivery is currently disabled by Empire Plaza. Please choose an online payment method."
                 )
+        elif payment_method != 'cod' and not self.context.get('verified_online_payment'):
+            raise serializers.ValidationError(
+                "Direct checkout is only permitted for Cash on Delivery. Online payments must be verified via Razorpay."
+            )
 
         # -----------------------------------------
         # 5. CHECK ITEM AVAILABILITY
