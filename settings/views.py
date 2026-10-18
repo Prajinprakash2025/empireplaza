@@ -29,18 +29,35 @@ class SiteSettingRetrieveUpdateView(generics.RetrieveUpdateAPIView):
         return obj
 
     def retrieve(self, request, *args, **kwargs):
-        # High-traffic safe: Cache response for 30s to prevent database contention
-        cached_data = cache.get(SITE_SETTINGS_CACHE_KEY)
-        if cached_data is not None:
-            return Response(cached_data)
+        # Check if caller is authenticated admin or requesting fresh data
+        is_admin = (
+            request.user 
+            and request.user.is_authenticated 
+            and getattr(request.user, 'role', '') == 'admin'
+        )
+        force_fresh = (
+            request.query_params.get('fresh') == 'true' 
+            or request.query_params.get('_t') is not None
+            or request.headers.get('Cache-Control') == 'no-cache'
+        )
+
+        # High-traffic safe: Serve cached response for public visitors unless fresh data requested
+        if not is_admin and not force_fresh:
+            cached_data = cache.get(SITE_SETTINGS_CACHE_KEY)
+            if cached_data is not None:
+                return Response(cached_data)
 
         instance = self.get_object()
         serializer = self.get_serializer(instance)
         data = serializer.data
+        # Keep cache populated with the latest settings
         cache.set(SITE_SETTINGS_CACHE_KEY, data, timeout=CACHE_TIMEOUT_SECONDS)
         return Response(data)
 
     def perform_update(self, serializer):
-        super().perform_update(serializer)
+        instance = serializer.save()
         # Invalidate cache immediately on admin update
         cache.delete(SITE_SETTINGS_CACHE_KEY)
+        # Pre-populate cache with fresh data
+        fresh_data = self.get_serializer(instance).data
+        cache.set(SITE_SETTINGS_CACHE_KEY, fresh_data, timeout=CACHE_TIMEOUT_SECONDS)
