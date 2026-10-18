@@ -625,17 +625,32 @@ class LogoutView(APIView):
             try:
                 from rest_framework_simplejwt.tokens import AccessToken
                 validated_token = AccessToken(token)
-                from accounts.models import CustomUser
-                user = CustomUser.objects.filter(id=validated_token['user_id']).first()
+                user = User.objects.filter(id=validated_token['user_id']).first()
             except Exception:
-                pass
+                try:
+                    import jwt
+                    payload = jwt.decode(token, options={"verify_signature": False})
+                    user = User.objects.filter(id=payload.get('user_id')).first()
+                except Exception:
+                    pass
+
+        if not user:
+            refresh_tok = request.COOKIES.get('refresh_token')
+            if refresh_tok:
+                try:
+                    import jwt
+                    payload = jwt.decode(refresh_tok, options={"verify_signature": False})
+                    user = User.objects.filter(id=payload.get('user_id')).first()
+                except Exception:
+                    pass
 
         if user and getattr(user, 'role', '') == 'delivery_boy':
             try:
                 profile = getattr(user, 'delivery_profile', None)
                 if profile:
                     profile.is_on_duty = False
-                    profile.save(update_fields=['is_on_duty'])
+                    profile.active_session_token = None
+                    profile.save(update_fields=['is_on_duty', 'active_session_token'])
 
                     # Broadcast real-time duty offline status to Admin Fleet Map & Customers
                     from orders.pusher_utils import trigger_order_event
@@ -650,11 +665,10 @@ class LogoutView(APIView):
                 logging.getLogger(__name__).warning(f"Error marking delivery boy offline on logout: {e}")
 
         response = Response({"message": "Logged out successfully"}, status=status.HTTP_200_OK)
-        response.delete_cookie('access_token', path='/')
-        response.delete_cookie('refresh_token', path='/')
-        response.delete_cookie('delivery_session_token', path='/')
-        response.delete_cookie('user_role', path='/')
-        response.delete_cookie('username', path='/')
+        cookie_keys = ['access_token', 'refresh_token', 'delivery_session_token', 'user_role', 'username', 'access', 'refresh']
+        for k in cookie_keys:
+            response.delete_cookie(k, path='/', samesite='Lax')
+            response.delete_cookie(k, path='/')
         return response
     
 from .serializers import (
@@ -779,6 +793,24 @@ class DeliveryBoyLoginView(APIView):
             max_age=JWT_COOKIE_MAX_AGE,
             path='/',
             httponly=True,
+            samesite='Lax',
+            secure=False
+        )
+        response.set_cookie(
+            key='user_role',
+            value=user.role,
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=False,
+            samesite='Lax',
+            secure=False
+        )
+        response.set_cookie(
+            key='username',
+            value=user.username,
+            max_age=JWT_COOKIE_MAX_AGE,
+            path='/',
+            httponly=False,
             samesite='Lax',
             secure=False
         )
