@@ -939,4 +939,18 @@ class AddressViewSet(viewsets.ModelViewSet):
         ).order_by('-is_default', '-created_at')
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        user = self.request.user
+        is_default = serializer.validated_data.get('is_default', False)
+        # If user has no addresses yet, make the first one default
+        if not Address.objects.filter(user=user).exists():
+            is_default = True
+
+        if is_default:
+            Address.objects.filter(user=user, is_default=True).update(is_default=False)
+
+        serializer.save(user=user, is_default=is_default)
+
+    def perform_update(self, serializer):
+        if serializer.validated_data.get('is_default'):
+            Address.objects.filter(user=self.request.user, is_default=True).exclude(pk=serializer.instance.pk).update(is_default=False)
+        serializer.save()
