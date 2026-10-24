@@ -279,6 +279,8 @@ class OrderReadSerializer(serializers.ModelSerializer):
             'total_price',
             'delivery_fee',
             'delivery_distance_km',
+            'delivery_latitude',
+            'delivery_longitude',
             'status',
             'payment_status',
             'items',
@@ -560,6 +562,9 @@ class CheckoutSerializer(serializers.Serializer):
             else 'completed'
         )
 
+        delivery_lat = getattr(address, 'latitude', None)
+        delivery_lng = getattr(address, 'longitude', None)
+
         order = Order.objects.create(
             user=user,
             customer_name=customer_name,
@@ -569,6 +574,8 @@ class CheckoutSerializer(serializers.Serializer):
             total_price=total_price,
             delivery_fee=delivery_fee,
             delivery_distance_km=distance_km,
+            delivery_latitude=delivery_lat,
+            delivery_longitude=delivery_lng,
             status='preparing',
             payment_status=initial_payment_status,
         )

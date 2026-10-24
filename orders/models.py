@@ -99,6 +99,16 @@ class Order(models.Model):
         default=0.0,
         help_text="Calculated delivery distance in KM",
     )
+    delivery_latitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Exact GPS latitude of delivery address",
+    )
+    delivery_longitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Exact GPS longitude of delivery address",
+    )
 
     status = models.CharField(
         max_length=30,
