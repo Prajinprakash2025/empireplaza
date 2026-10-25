@@ -753,7 +753,7 @@ class LogoutView(APIView):
                 if user:
                     token_ver = validated_token.get('token_version')
                     expected_ver = getattr(user, 'token_version', None)
-                    if token_ver is not None and expected_ver is not None and token_ver != expected_ver:
+                    if token_ver is None or (expected_ver is not None and token_ver != expected_ver):
                         is_already_revoked = True
             except Exception:
                 user = None
@@ -767,7 +767,7 @@ class LogoutView(APIView):
                 if user:
                     token_ver = validated_refresh.get('token_version')
                     expected_ver = getattr(user, 'token_version', None)
-                    if token_ver is not None and expected_ver is not None and token_ver != expected_ver:
+                    if token_ver is None or (expected_ver is not None and token_ver != expected_ver):
                         is_already_revoked = True
                 rf_jti = validated_refresh.get('jti')
                 if rf_jti and BlacklistedToken.objects.filter(token__jti=rf_jti).exists():
@@ -787,7 +787,7 @@ class LogoutView(APIView):
                 if user:
                     rf_ver = rf_chk.get('token_version')
                     expected_ver = getattr(user, 'token_version', None)
-                    if rf_ver is not None and expected_ver is not None and rf_ver != expected_ver:
+                    if rf_ver is None or (expected_ver is not None and rf_ver != expected_ver):
                         is_already_revoked = True
             except Exception:
                 pass

@@ -933,11 +933,21 @@ class RazorpayCreateOrderView(APIView):
             subtotal += (Decimal(str(price)) + Decimal(str(pkg))) * item.quantity
 
         delivery_fee = Decimal('0.00')
-        address_id = request.data.get('address_id')
-        if not address_id:
+        address_id_raw = request.data.get('address_id')
+        if address_id_raw is None or str(address_id_raw).strip() == '':
             return Response({
                 "status": False,
                 "error": "Delivery address is required to calculate delivery charges and initialize payment."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            address_id = int(str(address_id_raw).strip())
+            if address_id <= 0:
+                raise ValueError()
+        except (ValueError, TypeError):
+            return Response({
+                "status": False,
+                "error": "Invalid address ID: must be a positive integer."
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -1121,13 +1131,23 @@ class RazorpayVerifyPaymentView(APIView):
                     "error": "This payment attempt has already been completed and consumed."
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            address_id = request.data.get('address_id') or attempt.address_id
+            address_id_raw = request.data.get('address_id') or getattr(attempt, 'address_id', None)
             special_instructions = request.data.get('special_instructions', '')
 
-            if not address_id:
+            if not address_id_raw:
                 return Response({
                     "status": False,
                     "error": "Delivery address ID is required to finalize order."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                address_id = int(str(address_id_raw).strip())
+                if address_id <= 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                return Response({
+                    "status": False,
+                    "error": "Invalid address ID: must be a positive integer."
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             # CRITICAL F02 FIX: Compute current cart total and verify against PaymentAttempt amount BEFORE checkout!
