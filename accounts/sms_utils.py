@@ -8,7 +8,7 @@ def send_2factor_otp(phone_number: str, otp_code: str) -> bool:
     """
     Sends a 6-digit OTP SMS via 2Factor.in API using pre-approved OTP1 template.
     """
-    api_key = getattr(settings, 'TWOFACTOR_API_KEY', 'b6e4bcf9-bdc3-11f1-af74-0200cd936042')
+    api_key = getattr(settings, 'TWOFACTOR_API_KEY', '')
     if not api_key:
         logger.warning("TWOFACTOR_API_KEY not configured. Skipping SMS.")
         return False

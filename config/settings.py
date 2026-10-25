@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     # Third party packages
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     
     # Local apps
@@ -193,19 +194,37 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '120/minute',
+        'user': '600/minute',
+        'auth_sensitive': '10/minute',
+        'otp_request': '5/minute',
+    }
 }
 
-# SimpleJWT Settings (Keeps user/admin/delivery logged in for 30 full days!)
+# SimpleJWT Settings (1 hour access token + rotated & blacklisted refresh tokens)
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=60),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+# Cookie security settings
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = False
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
 
 # 30-day persistence for Django sessions and cookies
 SESSION_COOKIE_AGE = 30 * 24 * 60 * 60  # 2,592,000 seconds (30 days)
@@ -226,16 +245,16 @@ PUBLIC_MEDIA_URL = _public_media.rstrip('/')
 APPEND_SLASH = False
 
 # Pusher Realtime Configuration
-PUSHER_APP_ID = os.getenv('PUSHER_APP_ID', '2199166')
-PUSHER_KEY = os.getenv('PUSHER_KEY', '090ea1adb4d94c205f51')
-PUSHER_SECRET = os.getenv('PUSHER_SECRET', 'd401e8846601e0b63120')
+PUSHER_APP_ID = os.getenv('PUSHER_APP_ID', '')
+PUSHER_KEY = os.getenv('PUSHER_KEY', '')
+PUSHER_SECRET = os.getenv('PUSHER_SECRET', '')
 PUSHER_CLUSTER = os.getenv('PUSHER_CLUSTER', 'ap2')
 
 # 2Factor SMS OTP Configuration
-TWOFACTOR_API_KEY = os.getenv('TWOFACTOR_API_KEY', 'b6e4bcf9-bdc3-11f1-af74-0200cd936042')
+TWOFACTOR_API_KEY = os.getenv('TWOFACTOR_API_KEY', '')
 
-# Google Firebase Configuration (Free 10,000 Phone OTP SMS/month)
-FIREBASE_API_KEY = os.getenv('FIREBASE_API_KEY', 'AIzaSyB0fsdU-KIpSmrJT5PHQEib86v1HABh30M')
+# Google Firebase Configuration
+FIREBASE_API_KEY = os.getenv('FIREBASE_API_KEY', '')
 
 # Razorpay Payment Gateway Configuration
 RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID', '')

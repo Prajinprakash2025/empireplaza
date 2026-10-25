@@ -15,7 +15,8 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsEmployee, IsAdminRole
 
-from .models import Cart, CartItem, Order, OrderItem
+from .models import Cart, CartItem, Order, OrderItem, PaymentAttempt
+from django.db import transaction
 from .serializers import (
     CartItemAddSerializer,
     CartItemQuantitySerializer,
@@ -878,7 +879,8 @@ class StaffDashboardAnalyticsView(APIView):
                 'operations_metrics': operations_metrics,
                 'recent_orders': recent_orders,
             }
-        })
+        })
+
 
 # ============================================================
 # 💳 RAZORPAY PAYMENT GATEWAY INTEGRATION
@@ -886,19 +888,16 @@ class StaffDashboardAnalyticsView(APIView):
 
 class RazorpayCreateOrderView(APIView):
     """
-    Creates a Razorpay Order ID for standard web checkout.
-    Endpoint: POST /api/create-order or /api/orders/create-order
-    Amount is validated to be at least 100 paise (₹1).
+    F02 FIX: Creates a Razorpay Order ID strictly bound to the authenticated customer's
+    server-calculated cart total and address-based delivery fee.
+    Client-supplied amounts are never accepted.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        import hmac
-        import hashlib
         import razorpay
         from django.conf import settings
 
-        amount_val = request.data.get('amount')
         currency = request.data.get('currency', 'INR')
         receipt = request.data.get('receipt')
 
@@ -911,99 +910,85 @@ class RazorpayCreateOrderView(APIView):
                 'error': 'Razorpay credentials not configured on server.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        amount_in_paise = 0
+        # 1. Server calculates checkout amount strictly from active Cart
+        cart = Cart.objects.filter(user=request.user).first()
+        if not cart or not cart.items.exists():
+            return Response({
+                'status': False,
+                'error': 'Cart is empty. Cannot create payment order.'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        if amount_val is not None:
+        subtotal = Decimal('0.00')
+        for item in cart.items.select_related('menu_item', 'variant'):
+            price = (
+                item.variant.offer_price or item.variant.actual_price
+                if item.variant
+                else item.menu_item.offer_price or item.menu_item.actual_price
+            ) or Decimal('0.00')
+            pkg = (
+                item.variant.packing_charge
+                if item.variant and item.variant.packing_charge is not None
+                else item.menu_item.packing_charge
+            ) or Decimal('0.00')
+            subtotal += (Decimal(str(price)) + Decimal(str(pkg))) * item.quantity
+
+        delivery_fee = Decimal('0.00')
+        address_id = request.data.get('address_id')
+        if address_id:
             try:
-                amount_num = float(amount_val)
-                if request.data.get('amount_is_paise'):
-                    amount_in_paise = int(amount_num)
-                else:
-                    amount_in_paise = int(round(amount_num * 100))
-            except (ValueError, TypeError):
-                return Response({
-                    'status': False,
-                    'error': 'Invalid amount value provided.'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            cart = Cart.objects.filter(user=request.user).first()
-            if not cart or not cart.items.exists():
-                return Response({
-                    'status': False,
-                    'error': 'Cart is empty. Cannot create payment order.'
-                }, status=status.HTTP_400_BAD_REQUEST)
+                addr = Address.objects.get(id=address_id, user=request.user)
+                site_settings = SiteSetting.objects.first()
 
-            subtotal = Decimal('0.00')
-            for item in cart.items.select_related('menu_item', 'variant'):
-                price = (
-                    item.variant.offer_price or item.variant.actual_price
-                    if item.variant
-                    else item.menu_item.offer_price or item.menu_item.actual_price
-                ) or Decimal('0.00')
-                pkg = (
-                    item.variant.packing_charge
-                    if item.variant and item.variant.packing_charge is not None
-                    else item.menu_item.packing_charge
-                ) or Decimal('0.00')
-                subtotal += (Decimal(str(price)) + Decimal(str(pkg))) * item.quantity
-
-            delivery_fee = Decimal('0.00')
-            address_id = request.data.get('address_id')
-            if address_id:
-                try:
-                    addr = Address.objects.get(id=address_id, user=request.user)
-                    site_settings = SiteSetting.objects.first()
-
-                    if site_settings and not site_settings.is_open:
-                        return Response({
-                            "status": False,
-                            "error": "Empire Plaza is currently closed for online orders."
-                        }, status=status.HTTP_400_BAD_REQUEST)
-
-                    max_radius = float(getattr(site_settings, 'delivery_radius', 0.0) or 0.0)
-                    cust_lat = addr.latitude
-                    cust_lng = addr.longitude
-
-                    if (cust_lat is None or cust_lng is None or (cust_lat == 0 and cust_lng == 0)):
-                        from .distance_utils import geocode_address
-                        g_lat, g_lng = geocode_address(addr.address_line, addr.city, addr.pincode)
-                        if g_lat and g_lng:
-                            cust_lat, cust_lng = g_lat, g_lng
-                            addr.latitude = g_lat
-                            addr.longitude = g_lng
-                            addr.save(update_fields=['latitude', 'longitude'])
-
-                    if site_settings and site_settings.latitude and site_settings.longitude:
-                        if cust_lat and cust_lng:
-                            dist_km = calculate_haversine_distance_km(
-                                site_settings.latitude, site_settings.longitude,
-                                cust_lat, cust_lng
-                            )
-                            if max_radius > 0 and dist_km > max_radius:
-                                return Response({
-                                    "status": False,
-                                    "error": f"Delivery unavailable: Your address is {dist_km:.1f} KM away, exceeding our maximum delivery radius of {max_radius:.1f} KM."
-                                }, status=status.HTTP_400_BAD_REQUEST)
-
-                            delivery_fee = calculate_delivery_fee(dist_km, subtotal, site_settings)
-                        elif max_radius > 0:
-                            return Response({
-                                "status": False,
-                                "error": f"Delivery location coordinates required. Your address must be verified within {max_radius:.1f} KM of Empire Plaza."
-                            }, status=status.HTTP_400_BAD_REQUEST)
-                except Address.DoesNotExist:
+                if site_settings and not site_settings.is_open:
                     return Response({
                         "status": False,
-                        "error": "Selected delivery address does not exist."
+                        "error": "Empire Plaza is currently closed for online orders."
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-            total_amount = subtotal + delivery_fee
-            amount_in_paise = int(round(float(total_amount) * 100))
+                max_radius = float(getattr(site_settings, 'delivery_radius', 0.0) or 0.0)
+                cust_lat = addr.latitude
+                cust_lng = addr.longitude
+
+                if (cust_lat is None or cust_lng is None or (cust_lat == 0 and cust_lng == 0)):
+                    from .distance_utils import geocode_address
+                    g_lat, g_lng = geocode_address(addr.address_line, addr.city, addr.pincode)
+                    if g_lat and g_lng:
+                        cust_lat, cust_lng = g_lat, g_lng
+                        addr.latitude = g_lat
+                        addr.longitude = g_lng
+                        addr.save(update_fields=['latitude', 'longitude'])
+
+                if site_settings and site_settings.latitude and site_settings.longitude:
+                    if cust_lat and cust_lng:
+                        dist_km = calculate_haversine_distance_km(
+                            site_settings.latitude, site_settings.longitude,
+                            cust_lat, cust_lng
+                        )
+                        if max_radius > 0 and dist_km > max_radius:
+                            return Response({
+                                "status": False,
+                                "error": f"Delivery unavailable: Your address is {dist_km:.1f} KM away, exceeding our maximum delivery radius of {max_radius:.1f} KM."
+                            }, status=status.HTTP_400_BAD_REQUEST)
+
+                        delivery_fee = calculate_delivery_fee(dist_km, subtotal, site_settings)
+                    elif max_radius > 0:
+                        return Response({
+                            "status": False,
+                            "error": f"Delivery location coordinates required. Your address must be verified within {max_radius:.1f} KM of Empire Plaza."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+            except Address.DoesNotExist:
+                return Response({
+                    "status": False,
+                    "error": "Selected delivery address does not exist."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        total_amount = subtotal + delivery_fee
+        amount_in_paise = int(round(float(total_amount) * 100))
 
         if amount_in_paise < 100:
             return Response({
                 'status': False,
-                'error': 'Minimum amount must be at least 100 paise (₹1).'
+                'error': 'Minimum checkout amount must be at least ₹1.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         if not receipt:
@@ -1020,6 +1005,22 @@ class RazorpayCreateOrderView(APIView):
             }
             rzp_order = client.order.create(data=order_data)
 
+            # Persist pending PaymentAttempt linking server-calculated amount and authenticated user
+            PaymentAttempt.objects.create(
+                user=request.user,
+                razorpay_order_id=rzp_order.get("id"),
+                amount=total_amount,
+                currency=currency,
+                status='created',
+                address_id=address_id if address_id else None,
+                cart_snapshot={
+                    'subtotal': str(subtotal),
+                    'delivery_fee': str(delivery_fee),
+                    'total': str(total_amount),
+                    'items_count': cart.items.count(),
+                }
+            )
+
             return Response({
                 "status": True,
                 "order_id": rzp_order.get("id"),
@@ -1033,28 +1034,18 @@ class RazorpayCreateOrderView(APIView):
                 "status": False,
                 "error": f"Razorpay bad request: {str(e)}"
             }, status=status.HTTP_400_BAD_REQUEST)
-        except razorpay.errors.SignatureVerificationError:
-            return Response({
-                "status": False,
-                "error": "Authentication with Razorpay failed. Check credentials."
-            }, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
-            err_msg = str(e)
-            if "authentication" in err_msg.lower() or "401" in err_msg:
-                return Response({
-                    "status": False,
-                    "error": "Authentication with Razorpay failed."
-                }, status=status.HTTP_401_UNAUTHORIZED)
             return Response({
                 "status": False,
-                "error": f"Failed to create Razorpay order: {err_msg}"
+                "error": f"Failed to create payment order: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class RazorpayVerifyPaymentView(APIView):
     """
-    Verifies Razorpay HMAC-SHA256 signature and completes the order checkout.
-    Endpoint: POST /api/verify-payment or /api/orders/verify-payment
+    F02 FIX: Verifies Razorpay HMAC signature, ensures the payment ID has never been consumed,
+    validates payment attempt ownership against the authenticated customer,
+    and atomically creates the finalized order.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1070,7 +1061,7 @@ class RazorpayVerifyPaymentView(APIView):
         if not razorpay_order_id or not razorpay_payment_id or not razorpay_signature:
             return Response({
                 "status": False,
-                "error": "Missing required fields: razorpay_order_id, razorpay_payment_id, and razorpay_signature are required."
+                "error": "Missing required payment fields: razorpay_order_id, razorpay_payment_id, and razorpay_signature are required."
             }, status=status.HTTP_400_BAD_REQUEST)
 
         key_secret = getattr(settings, 'RAZORPAY_KEY_SECRET', '')
@@ -1080,6 +1071,7 @@ class RazorpayVerifyPaymentView(APIView):
                 "error": "Razorpay secret key not configured on server."
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        # 1. Cryptographic HMAC verification
         msg = f"{razorpay_order_id}|{razorpay_payment_id}".encode('utf-8')
         generated_signature = hmac.new(
             key_secret.encode('utf-8'),
@@ -1090,14 +1082,45 @@ class RazorpayVerifyPaymentView(APIView):
         if not hmac.compare_digest(generated_signature, razorpay_signature):
             return Response({
                 "status": False,
-                "error": "Signature verification failed. Payment is invalid and has NOT been marked as paid."
+                "error": "Signature verification failed. Payment proof is invalid."
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        address_id = request.data.get('address_id')
-        special_instructions = request.data.get('special_instructions', '')
+        # 2. Atomically verify payment attempt and enforce single-use consumption (F02 Fix)
+        with transaction.atomic():
+            # Check if this razorpay_payment_id has already been consumed anywhere in the database
+            if Order.objects.filter(razorpay_payment_id=razorpay_payment_id).exists():
+                return Response({
+                    "status": False,
+                    "error": "This payment ID has already been consumed for another order. Replay rejected."
+                }, status=status.HTTP_400_BAD_REQUEST)
 
-        order_data = None
-        if address_id:
+            # Lock the PaymentAttempt row for this user and order id
+            attempt = PaymentAttempt.objects.select_for_update().filter(
+                razorpay_order_id=razorpay_order_id,
+                user=request.user
+            ).first()
+
+            if not attempt:
+                return Response({
+                    "status": False,
+                    "error": "No matching payment checkout attempt found for your account."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            if attempt.status == 'completed':
+                return Response({
+                    "status": False,
+                    "error": "This payment attempt has already been completed and consumed."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            address_id = request.data.get('address_id') or attempt.address_id
+            special_instructions = request.data.get('special_instructions', '')
+
+            if not address_id:
+                return Response({
+                    "status": False,
+                    "error": "Delivery address ID is required to finalize order."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             checkout_data = {
                 'address_id': address_id,
                 'special_instructions': special_instructions,
@@ -1105,13 +1128,26 @@ class RazorpayVerifyPaymentView(APIView):
             }
             serializer = CheckoutSerializer(
                 data=checkout_data,
-                context={'request': request, 'verified_online_payment': True}
+                context={
+                    'request': request,
+                    'verified_online_payment': True,
+                    'razorpay_order_id': razorpay_order_id,
+                    'razorpay_payment_id': razorpay_payment_id,
+                }
             )
             serializer.is_valid(raise_exception=True)
             order = serializer.save()
             order.payment_status = 'completed'
             order.status = 'preparing'
-            order.save(update_fields=['payment_status', 'status'])
+            order.razorpay_order_id = razorpay_order_id
+            order.razorpay_payment_id = razorpay_payment_id
+            order.save(update_fields=['payment_status', 'status', 'razorpay_order_id', 'razorpay_payment_id'])
+
+            # Mark PaymentAttempt as completed and link to order
+            attempt.status = 'completed'
+            attempt.razorpay_payment_id = razorpay_payment_id
+            attempt.order = order
+            attempt.save(update_fields=['status', 'razorpay_payment_id', 'order', 'updated_at'])
 
             order_data = OrderReadSerializer(order, context={'request': request}).data
             trigger_order_event('new-order', order_data)

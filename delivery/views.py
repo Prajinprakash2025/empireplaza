@@ -10,6 +10,31 @@ from orders.pusher_utils import trigger_order_event
 from .models import Delivery
 from .serializers import DeliverySerializer
 
+def verify_rider_device_session(request, profile):
+    """
+    Enforces strict single-device session check for delivery riders (F11 fix).
+    If rider profile has an active session token, the request MUST provide 
+    a matching session token via X-Device-Session header or delivery_session_token cookie.
+    Omission of the token is strictly rejected.
+    """
+    if not profile or not profile.active_session_token:
+        return None
+
+    device_token = request.headers.get('X-Device-Session') or request.COOKIES.get('delivery_session_token')
+    if not device_token:
+        return Response(
+            {"error": "Device session token required. Please login again."},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    if profile.active_session_token != device_token:
+        return Response(
+            {"error": "Session expired. Your account was logged in on another device."},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    return None
+
+
 
 class AvailableDeliveriesView(APIView):
     """
@@ -42,6 +67,10 @@ class AcceptDeliveryView(APIView):
                 {"error": "Delivery boy profile not found."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        session_err = verify_rider_device_session(request, profile)
+        if session_err:
+            return session_err
 
         # Delivery boy must be on duty
         if not profile.is_on_duty:
@@ -289,13 +318,10 @@ class UpdateLocationView(APIView):
         try:
             profile = request.user.delivery_profile
             
-            # Multi-device conflict prevention: If another phone logged in, stop this phone
-            device_token = request.headers.get('X-Device-Session') or request.COOKIES.get('delivery_session_token')
-            if profile.active_session_token and device_token and profile.active_session_token != device_token:
-                return Response(
-                    {"error": "Session expired. Your account was logged in on another device."},
-                    status=status.HTTP_401_UNAUTHORIZED
-                )
+            # F11 FIX: Enforce device session strictly
+            session_err = verify_rider_device_session(request, profile)
+            if session_err:
+                return session_err
 
             profile.current_latitude = float(latitude)
             profile.current_longitude = float(longitude)
@@ -330,4 +356,4 @@ class UpdateLocationView(APIView):
             "longitude": float(longitude),
             "is_on_duty": profile.is_on_duty,
             "last_seen": last_seen_iso
-        })
+        })

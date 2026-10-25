@@ -117,6 +117,20 @@ class Order(models.Model):
         db_index=True,
     )
 
+    razorpay_order_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Razorpay Order ID linked to this order",
+    )
+    razorpay_payment_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        unique=True,
+        help_text="Unique consumed Razorpay Payment ID preventing replay attacks",
+    )
     payment_status = models.CharField(
         max_length=20,
         choices=PAYMENT_STATUS_CHOICES,
@@ -208,3 +222,38 @@ class OrderItem(models.Model):
             f"{self.quantity} x "
             f"{self.item_name}{variant_name}"
         )
+
+class PaymentAttempt(models.Model):
+    STATUS_CHOICES = (
+        ('created', 'Created'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='payment_attempts',
+    )
+    razorpay_order_id = models.CharField(max_length=100, unique=True, db_index=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, help_text="Order amount in INR calculated on server")
+    currency = models.CharField(max_length=10, default='INR')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='created', db_index=True)
+    razorpay_payment_id = models.CharField(max_length=100, blank=True, null=True, unique=True)
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='payment_attempts',
+    )
+    address_id = models.PositiveIntegerField(null=True, blank=True)
+    cart_snapshot = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"PaymentAttempt {self.razorpay_order_id} - ₹{self.amount} ({self.status})"

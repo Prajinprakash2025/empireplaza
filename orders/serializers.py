@@ -576,6 +576,8 @@ class CheckoutSerializer(serializers.Serializer):
             delivery_distance_km=distance_km,
             delivery_latitude=delivery_lat,
             delivery_longitude=delivery_lng,
+            razorpay_order_id=self.context.get('razorpay_order_id'),
+            razorpay_payment_id=self.context.get('razorpay_payment_id'),
             status='preparing',
             payment_status=initial_payment_status,
         )

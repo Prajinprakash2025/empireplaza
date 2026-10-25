@@ -21,6 +21,18 @@ from .sms_utils import send_2factor_otp
 
 # 🌟 30-Day Persistent Cookie Lifetime (2,592,000 seconds)
 JWT_COOKIE_MAX_AGE = 30 * 24 * 60 * 60
+from rest_framework.throttling import ScopedRateThrottle, AnonRateThrottle
+
+def get_cookie_secure(request=None):
+    if not settings.DEBUG:
+        return True
+    if request and (request.is_secure() or request.META.get('HTTP_X_FORWARDED_PROTO') == 'https'):
+        return True
+    return False
+
+JWT_ACCESS_COOKIE_MAX_AGE = 60 * 60  # 1 hour
+JWT_REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
+
 
 
 
@@ -28,6 +40,8 @@ JWT_COOKIE_MAX_AGE = 30 * 24 * 60 * 60
 # 2. 🌟 NEW: Customer Sign Up View (Full Name, Phone, Email vangi OTP send cheyyunnu):
 class SignUpView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'otp_request'
     def post(self, request):
         serializer = SignUpSerializer(data=request.data)
         if not serializer.is_valid():
@@ -59,7 +73,7 @@ class SignUpView(APIView):
         user.save()
 
         # OTP saved to database for fallback
-        print(f"--- SIGNUP OTP for {phone_number} is {otp_code} ---")
+        # OTP generated and dispatched via SMS
 
         return Response({
             "status": True,
@@ -112,6 +126,8 @@ def get_tokens_for_user(user):
 
 class SendOTPView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'otp_request'
 
     def post(self, request):
         serializer = SendOTPSerializer(data=request.data)
@@ -160,7 +176,7 @@ class SendOTPView(APIView):
         cache.delete(f"otp_attempts_{phone_number}")
 
         # OTP saved to database for fallback
-        print(f"--- OTP for {phone_number} is {otp_code} ---")
+        # OTP generated and dispatched via SMS
         
         return Response({
             "message": "OTP sent successfully"
@@ -170,6 +186,8 @@ class SendOTPView(APIView):
 
 class VerifyOTPView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_sensitive'
 
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
@@ -237,7 +255,7 @@ class VerifyOTPView(APIView):
             path='/',
             httponly=True,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
         response.set_cookie(
             key='refresh_token',
@@ -246,7 +264,7 @@ class VerifyOTPView(APIView):
             path='/',
             httponly=True,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
 
         return response
@@ -254,76 +272,83 @@ class VerifyOTPView(APIView):
 
 class FirebaseVerifyView(APIView):
     """
-    Verifies Firebase Phone Auth ID Token and issues session JWT tokens for the customer.
+    Verifies Firebase Phone Auth ID Token strictly against Google's servers
+    and issues customer session JWT tokens.
     Free 10,000 OTPs per month powered by Google Firebase!
     """
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_sensitive'
 
     def post(self, request):
         import re
         import requests
-        import jwt
 
         id_token = request.data.get('id_token')
-        phone_number = request.data.get('phone_number', '')
         full_name = request.data.get('full_name', '')
         email = request.data.get('email', '')
 
         if not id_token:
             return Response({"error": "id_token is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        verified_phone = None
-        firebase_api_key = getattr(settings, 'FIREBASE_API_KEY', 'AIzaSyB0fsdU-KIpSmrJT5PHQEib86v1HABh30M')
+        firebase_api_key = getattr(settings, 'FIREBASE_API_KEY', '')
+        if not firebase_api_key:
+            return Response({"error": "Firebase authentication service not configured on server."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         url = f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={firebase_api_key}"
 
+        verified_phone = None
         try:
             res = requests.post(url, json={"idToken": id_token}, timeout=8)
             if res.status_code == 200:
                 data = res.json()
                 users = data.get("users", [])
-                if users:
+                if users and users[0].get("phoneNumber"):
                     verified_phone = users[0].get("phoneNumber")
             else:
-                print(f"[FirebaseVerifyView] Google API verify returned {res.status_code}: {res.text}")
+                return Response({"error": "Invalid or expired Firebase ID token."}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
-            print(f"[FirebaseVerifyView] Error contacting Google Identity Toolkit: {e}")
+            return Response({"error": "Failed to verify identity with authentication provider."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-        # Fallback decode if direct Google call is blocked/delayed
+        # Strictly FAIL CLOSED if no verified phone number was returned by Google
         if not verified_phone:
-            try:
-                decoded = jwt.decode(id_token, options={"verify_signature": False})
-                verified_phone = decoded.get("phone_number")
-            except Exception as e:
-                print(f"[FirebaseVerifyView] JWT decode failed: {e}")
-
-        if not verified_phone and phone_number:
-            verified_phone = phone_number
-
-        if not verified_phone:
-            return Response({"error": "Invalid or expired Firebase ID token"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid or expired Firebase ID token"}, status=status.HTTP_401_UNAUTHORIZED)
 
         # Strip country code to get clean 10-digit phone number
         digits_only = re.sub(r'\D', '', str(verified_phone))
         clean_phone = digits_only[-10:] if len(digits_only) >= 10 else digits_only
 
-        user, created = User.objects.get_or_create(
-            phone_number=clean_phone,
-            defaults={
-                'username': f"user_{clean_phone}",
-                'first_name': full_name or f"User {clean_phone[-4:]}",
-                'email': email or '',
-                'role': 'user',
-                'is_verified': True,
-            }
-        )
-
-        if not created:
-            if full_name:
+        # Check existing user
+        existing_user = User.objects.filter(phone_number=clean_phone).first()
+        if existing_user:
+            # F01 FIX: Account Role Isolation
+            # Staff, admin, and delivery accounts CANNOT authenticate through customer Firebase login
+            if existing_user.is_staff or existing_user.is_superuser or existing_user.role in ['admin', 'employee', 'delivery_boy']:
+                return Response(
+                    {"error": "Staff, administration, and delivery accounts must use their dedicated portals."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if not existing_user.is_active:
+                return Response(
+                    {"error": "Your account has been deactivated. Please contact support."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            user = existing_user
+            if full_name and not user.first_name:
                 user.first_name = full_name
             if email and not user.email:
                 user.email = email
             user.is_verified = True
             user.save()
+        else:
+            user = User.objects.create(
+                phone_number=clean_phone,
+                username=f"user_{clean_phone}",
+                first_name=full_name or f"User {clean_phone[-4:]}",
+                email=email or '',
+                role='user',
+                is_verified=True,
+            )
 
         refresh = get_tokens_for_user(user)
 
@@ -333,32 +358,30 @@ class FirebaseVerifyView(APIView):
         response = Response({
             "status": True,
             "message": welcome_message,
-            "access_token": str(refresh.access_token),
-            "refresh_token": str(refresh),
             "user": UserSerializer(user).data
         }, status=status.HTTP_200_OK)
 
+        is_secure = get_cookie_secure(request)
         response.set_cookie(
             key='access_token',
             value=str(refresh.access_token),
-            max_age=JWT_COOKIE_MAX_AGE,
+            max_age=JWT_ACCESS_COOKIE_MAX_AGE,
             path='/',
             httponly=True,
             samesite='Lax',
-            secure=False
+            secure=is_secure
         )
         response.set_cookie(
             key='refresh_token',
             value=str(refresh),
-            max_age=JWT_COOKIE_MAX_AGE,
+            max_age=JWT_REFRESH_COOKIE_MAX_AGE,
             path='/',
             httponly=True,
             samesite='Lax',
-            secure=False
+            secure=is_secure
         )
 
         return response
-
 
 
 class StaffAndAdminLoginView(APIView):
@@ -366,6 +389,8 @@ class StaffAndAdminLoginView(APIView):
     Unified Login API for Admin (Username) and Kitchen Employees (Email).
     """
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_sensitive'
 
     def post(self, request):
         serializer = StaffLoginSerializer(data=request.data)
@@ -416,7 +441,7 @@ class StaffAndAdminLoginView(APIView):
             path='/',
             httponly=True,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
         response.set_cookie(
             key='refresh_token',
@@ -425,7 +450,7 @@ class StaffAndAdminLoginView(APIView):
             path='/',
             httponly=True,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
 
         # Set verified user_role and username cookies for frontend permissions & routing
@@ -436,7 +461,7 @@ class StaffAndAdminLoginView(APIView):
             path='/',
             httponly=False,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
         response.set_cookie(
             key='username',
@@ -445,7 +470,7 @@ class StaffAndAdminLoginView(APIView):
             path='/',
             httponly=False,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
 
         return response
@@ -577,7 +602,8 @@ class CustomerManagementViewSet(viewsets.ReadOnlyModelViewSet):
 class CookieTokenRefreshView(APIView):
     """
     Reads refresh_token from HttpOnly cookies, validates it, 
-    and sets a fresh access_token HttpOnly cookie.
+    rotates and blacklists the previous refresh token,
+    and sets fresh access_token & refresh_token HttpOnly cookies.
     """
     permission_classes = [permissions.AllowAny]
 
@@ -589,35 +615,40 @@ class CookieTokenRefreshView(APIView):
 
         try:
             refresh = RefreshToken(refresh_token)
+
+            # Blacklist old refresh token before issuing rotated one (F05 fix)
+            try:
+                refresh.blacklist()
+            except Exception:
+                pass
+
+            refresh.set_jti()
+            refresh.set_exp()
             new_access_token = str(refresh.access_token)
+            new_refresh_token = str(refresh)
 
             response = Response({"message": "Token refreshed successfully"}, status=status.HTTP_200_OK)
+            is_secure = get_cookie_secure(request)
 
-            # Set fresh access_token cookie (30 days validity)
             response.set_cookie(
                 key='access_token',
                 value=new_access_token,
-                max_age=JWT_COOKIE_MAX_AGE,
+                max_age=JWT_ACCESS_COOKIE_MAX_AGE,
                 path='/',
                 httponly=True,
                 samesite='Lax',
-                secure=False
+                secure=is_secure
             )
 
-            # Optional: Rotate refresh token if ROTATE_REFRESH_TOKENS is True
-            if getattr(settings, 'SIMPLE_JWT', {}).get('ROTATE_REFRESH_TOKENS', False):
-                refresh.set_jti()
-                refresh.set_exp()
-                response.set_cookie(
-                    key='refresh_token',
-                    value=str(refresh),
-                    max_age=JWT_COOKIE_MAX_AGE,
-                    path='/',
-                    httponly=True,
-                    samesite='Lax',
-                    secure=False
-                )
-
+            response.set_cookie(
+                key='refresh_token',
+                value=new_refresh_token,
+                max_age=JWT_REFRESH_COOKIE_MAX_AGE,
+                path='/',
+                httponly=True,
+                samesite='Lax',
+                secure=is_secure
+            )
 
             return response
 
@@ -746,6 +777,8 @@ class DeliveryBoyLoginView(APIView):
     Accepts Username or Email or Phone with Password.
     """
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_sensitive'
 
     def post(self, request):
         serializer = StaffLoginSerializer(data=request.data)
@@ -792,7 +825,7 @@ class DeliveryBoyLoginView(APIView):
             path='/',
             httponly=True,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
         response.set_cookie(
             key='refresh_token',
@@ -801,7 +834,7 @@ class DeliveryBoyLoginView(APIView):
             path='/',
             httponly=True,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
         response.set_cookie(
             key='delivery_session_token',
@@ -810,7 +843,7 @@ class DeliveryBoyLoginView(APIView):
             path='/',
             httponly=True,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
         response.set_cookie(
             key='user_role',
@@ -819,7 +852,7 @@ class DeliveryBoyLoginView(APIView):
             path='/',
             httponly=False,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
         response.set_cookie(
             key='username',
@@ -828,7 +861,7 @@ class DeliveryBoyLoginView(APIView):
             path='/',
             httponly=False,
             samesite='Lax',
-            secure=False
+            secure=get_cookie_secure(request)
         )
 
         return response
