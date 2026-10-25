@@ -39,6 +39,7 @@ JWT_REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
 
 # 2. 🌟 NEW: Customer Sign Up View (Full Name, Phone, Email vangi OTP send cheyyunnu):
 class SignUpView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'otp_request'
@@ -128,6 +129,7 @@ def get_tokens_for_user(user):
     return refresh
 
 class SendOTPView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'otp_request'
@@ -188,6 +190,7 @@ class SendOTPView(APIView):
 
 
 class VerifyOTPView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'auth_sensitive'
@@ -279,6 +282,7 @@ class FirebaseVerifyView(APIView):
     and issues customer session JWT tokens.
     Free 10,000 OTPs per month powered by Google Firebase!
     """
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'auth_sensitive'
@@ -392,6 +396,7 @@ class StaffAndAdminLoginView(APIView):
     """
     Unified Login API for Admin (Username) and Kitchen Employees (Email).
     """
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'auth_sensitive'
@@ -610,6 +615,7 @@ class CookieTokenRefreshView(APIView):
     rotates and blacklists the previous refresh token,
     and sets fresh access_token & refresh_token HttpOnly cookies.
     """
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -627,25 +633,14 @@ class CookieTokenRefreshView(APIView):
             user_id = refresh.payload.get('user_id')
             user_obj = User.objects.filter(id=user_id).first() if user_id else None
 
-            # R4-01 FIX: Persistent token_version verification
-            if user_obj:
-                token_ver = refresh.payload.get('token_version')
-                expected_ver = getattr(user_obj, 'token_version', 1) or 1
-                if token_ver is not None and token_ver != expected_ver:
-                    return Response(
-                        {"error": "Session expired. Token revoked by logout. Please login again."},
-                        status=status.HTTP_401_UNAUTHORIZED
-                    )
-
+            # R4-01 / I02 FIX: Persistent token_version verification; reject legacy versionless refresh tokens
             token_ver = refresh.payload.get('token_version')
-            if token_ver is None and user_id:
-                user_logout_time = cache.get(f"user_logout_time_{user_id}")
-                token_iat = refresh.payload.get('iat')
-                if user_logout_time and token_iat and token_iat <= int(user_logout_time):
-                    return Response(
-                        {"error": "Session expired. Token revoked by logout. Please login again."},
-                        status=status.HTTP_401_UNAUTHORIZED
-                    )
+            expected_ver = getattr(user_obj, 'token_version', 1) or 1 if user_obj else 1
+            if token_ver is None or token_ver != expected_ver:
+                return Response(
+                    {"error": "Session expired. Token revoked by logout or missing version. Please login again."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
 
             # Blacklist old refresh token before issuing rotated one (F05 fix)
             try:
@@ -881,6 +876,7 @@ class DeliveryBoyLoginView(APIView):
     Dedicated Login API for Delivery Boys.
     Accepts Username or Email or Phone with Password.
     """
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'auth_sensitive'

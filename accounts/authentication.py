@@ -84,18 +84,11 @@ class StrictCookieJWTAuthentication(JWTAuthentication):
                     cache.set(f"blacklisted_access_jti_{jti}", True, timeout=7 * 86400)
                     raise AuthenticationFailed('Token has been revoked by logout.')
 
-            # R4-01 FIX: Persistent token_version verification across all sessions and cache loss
+            # R4-01 / I02 FIX: Persistent token_version verification; reject legacy versionless tokens
             token_ver = validated_token.get('token_version')
             expected_ver = getattr(user, 'token_version', 1) or 1
-            if token_ver is not None and token_ver != expected_ver:
-                raise AuthenticationFailed('Session expired. Token revoked by logout.')
-
-            # Check if user was logged out before this token was issued (legacy fallback for tokens without version)
-            if token_ver is None:
-                user_logout_time = cache.get(f"user_logout_time_{user.id}")
-                token_iat = validated_token.get('iat')
-                if user_logout_time and token_iat and token_iat < int(user_logout_time):
-                    raise AuthenticationFailed('Session expired. Token revoked by logout.')
+            if token_ver is None or token_ver != expected_ver:
+                raise AuthenticationFailed('Session expired. Token revoked by logout or missing version.')
 
             if not user.is_active:
                 raise AuthenticationFailed('User account is deactivated.')

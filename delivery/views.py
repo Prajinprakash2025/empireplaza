@@ -146,6 +146,10 @@ class CompleteDeliveryView(APIView):
     permission_classes = [IsDeliveryBoy]
 
     def post(self, request, order_id):
+        profile = getattr(request.user, 'delivery_profile', None)
+        session_err = verify_rider_device_session(request, profile)
+        if session_err:
+            return session_err
 
         try:
             delivery = Delivery.objects.get(
@@ -237,6 +241,10 @@ class ToggleDutyView(APIView):
         except Exception:
             from accounts.models import DeliveryBoyProfile
             profile, _ = DeliveryBoyProfile.objects.get_or_create(user=request.user)
+
+        session_err = verify_rider_device_session(request, profile)
+        if session_err:
+            return session_err
 
         if profile.is_busy and profile.is_on_duty:
             return Response(

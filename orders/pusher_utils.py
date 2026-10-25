@@ -40,6 +40,10 @@ def sanitize_order_payload(data: dict) -> dict:
 
     sanitized = dict(data)
 
+    # 0. Redact Customer Name from public real-time events (I04 fix)
+    if 'customer_name' in sanitized:
+        sanitized.pop('customer_name', None)
+
     # 1. Mask Customer & Rider Phone Numbers
     if 'customer_phone' in sanitized and sanitized['customer_phone']:
         phone = str(sanitized['customer_phone'])
