@@ -44,6 +44,8 @@ class SignUpView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'otp_request'
     def post(self, request):
+        from accounts.authentication import enforce_csrf_protection
+        enforce_csrf_protection(request)
         serializer = SignUpSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -135,6 +137,9 @@ class SendOTPView(APIView):
     throttle_scope = 'otp_request'
 
     def post(self, request):
+        from accounts.authentication import enforce_csrf_protection
+        enforce_csrf_protection(request)
+
         serializer = SendOTPSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -196,6 +201,9 @@ class VerifyOTPView(APIView):
     throttle_scope = 'auth_sensitive'
 
     def post(self, request):
+        from accounts.authentication import enforce_csrf_protection
+        enforce_csrf_protection(request)
+
         serializer = VerifyOTPSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -288,6 +296,9 @@ class FirebaseVerifyView(APIView):
     throttle_scope = 'auth_sensitive'
 
     def post(self, request):
+        from accounts.authentication import enforce_csrf_protection
+        enforce_csrf_protection(request)
+
         import re
         import requests
 
@@ -402,6 +413,9 @@ class StaffAndAdminLoginView(APIView):
     throttle_scope = 'auth_sensitive'
 
     def post(self, request):
+        from accounts.authentication import enforce_csrf_protection
+        enforce_csrf_protection(request)
+
         serializer = StaffLoginSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -722,28 +736,61 @@ class LogoutView(APIView):
         user = None
         access_tok = request.COOKIES.get('access_token') or request.headers.get('Authorization', '').replace('Bearer ', '').strip()
         refresh_tok = request.COOKIES.get('refresh_token')
+        is_already_revoked = False
 
         # F04 FIX: Cryptographically verify user identity ONLY. NEVER decode unsigned tokens!
         if access_tok:
             try:
                 from rest_framework_simplejwt.tokens import AccessToken
+                from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
                 validated_token = AccessToken(access_tok)
                 user = User.objects.filter(id=validated_token['user_id']).first()
 
-                # F05 FIX: Revoke this specific access token JTI immediately
                 jti = validated_token.get('jti')
-                if jti:
-                    cache.set(f"blacklisted_access_jti_{jti}", True, timeout=7 * 86400)
+                if jti and (cache.get(f"blacklisted_access_jti_{jti}") or BlacklistedToken.objects.filter(token__jti=jti).exists()):
+                    is_already_revoked = True
+
+                if user:
+                    token_ver = validated_token.get('token_version')
+                    expected_ver = getattr(user, 'token_version', None)
+                    if token_ver is not None and expected_ver is not None and token_ver != expected_ver:
+                        is_already_revoked = True
             except Exception:
                 user = None
 
         if not user and refresh_tok:
             try:
                 from rest_framework_simplejwt.tokens import RefreshToken
+                from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
                 validated_refresh = RefreshToken(refresh_tok)
                 user = User.objects.filter(id=validated_refresh['user_id']).first()
+                if user:
+                    token_ver = validated_refresh.get('token_version')
+                    expected_ver = getattr(user, 'token_version', None)
+                    if token_ver is not None and expected_ver is not None and token_ver != expected_ver:
+                        is_already_revoked = True
+                rf_jti = validated_refresh.get('jti')
+                if rf_jti and BlacklistedToken.objects.filter(token__jti=rf_jti).exists():
+                    is_already_revoked = True
             except Exception:
                 user = None
+
+        # Also check if refresh_tok is already blacklisted
+        if refresh_tok and not is_already_revoked:
+            try:
+                from rest_framework_simplejwt.tokens import RefreshToken
+                from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+                rf_chk = RefreshToken(refresh_tok)
+                rf_jti = rf_chk.get('jti')
+                if rf_jti and BlacklistedToken.objects.filter(token__jti=rf_jti).exists():
+                    is_already_revoked = True
+                if user:
+                    rf_ver = rf_chk.get('token_version')
+                    expected_ver = getattr(user, 'token_version', None)
+                    if rf_ver is not None and expected_ver is not None and rf_ver != expected_ver:
+                        is_already_revoked = True
+            except Exception:
+                pass
 
         # F05 FIX: Revoke access token in database for cross-worker durability
         if access_tok and user:
@@ -769,8 +816,19 @@ class LogoutView(APIView):
             except Exception:
                 pass
 
-        # F05 FIX: Revoke ALL previously copied tokens for this user upon logout (both cache and DB)
-        if user:
+        # F05 FIX: Blacklist refresh token in database
+        if refresh_tok:
+            try:
+                from rest_framework_simplejwt.tokens import RefreshToken
+                rf = RefreshToken(refresh_tok)
+                rf.blacklist()
+            except Exception:
+                pass
+
+        # P2-01 FIX: Idempotent logout! If the presented session is already revoked,
+        # DO NOT increment user.token_version and DO NOT mutate rider status.
+        # This prevents duplicate/replayed logout requests from revoking fresh sessions!
+        if user and not is_already_revoked:
             try:
                 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
                 for ot in OutstandingToken.objects.filter(user=user):
@@ -781,35 +839,26 @@ class LogoutView(APIView):
             user.save(update_fields=['token_version'])
             cache.set(f"user_logout_time_{user.id}", timezone.now().timestamp(), timeout=30 * 86400)
 
-        # F04 FIX: Only mutate delivery boy profile if cryptographically authenticated!
-        if user and getattr(user, 'role', '') == 'delivery_boy':
-            try:
-                profile = getattr(user, 'delivery_profile', None)
-                if profile:
-                    profile.is_on_duty = False
-                    profile.active_session_token = None
-                    profile.save(update_fields=['is_on_duty', 'active_session_token'])
+            # F04 FIX: Only mutate delivery boy profile if cryptographically authenticated!
+            if getattr(user, 'role', '') == 'delivery_boy':
+                try:
+                    profile = getattr(user, 'delivery_profile', None)
+                    if profile:
+                        profile.is_on_duty = False
+                        profile.active_session_token = None
+                        profile.save(update_fields=['is_on_duty', 'active_session_token'])
 
-                    # Broadcast real-time duty offline status to Admin Fleet Map & Customers
-                    from orders.pusher_utils import trigger_order_event
-                    trigger_order_event('delivery-duty-updated', {
-                        'delivery_boy_id': user.id,
-                        'is_on_duty': False,
-                        'latitude': profile.current_latitude,
-                        'longitude': profile.current_longitude,
-                    })
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning(f"Error marking delivery boy offline on logout: {e}")
-
-        # F05 FIX: Blacklist refresh token in database
-        if refresh_tok:
-            try:
-                from rest_framework_simplejwt.tokens import RefreshToken
-                rf = RefreshToken(refresh_tok)
-                rf.blacklist()
-            except Exception:
-                pass
+                        # Broadcast real-time duty offline status to Admin Fleet Map & Customers
+                        from orders.pusher_utils import trigger_order_event
+                        trigger_order_event('delivery-duty-updated', {
+                            'delivery_boy_id': user.id,
+                            'is_on_duty': False,
+                            'latitude': profile.current_latitude,
+                            'longitude': profile.current_longitude,
+                        })
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(f"Error marking delivery boy offline on logout: {e}")
 
         response = Response({"message": "Logged out successfully"}, status=status.HTTP_200_OK)
         cookie_keys = ['access_token', 'refresh_token', 'delivery_session_token', 'user_role', 'username', 'access', 'refresh']
@@ -882,6 +931,9 @@ class DeliveryBoyLoginView(APIView):
     throttle_scope = 'auth_sensitive'
 
     def post(self, request):
+        from accounts.authentication import enforce_csrf_protection
+        enforce_csrf_protection(request)
+
         serializer = StaffLoginSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
