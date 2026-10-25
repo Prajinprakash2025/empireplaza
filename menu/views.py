@@ -48,6 +48,7 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
         }, status=status.HTTP_200_OK)
 
 class PublicCategoryListView(generics.ListAPIView):
+    authentication_classes = []
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [AllowAny]
@@ -58,6 +59,7 @@ class PublicCategoryListView(generics.ListAPIView):
 # MENU ITEM VIEWS
 # ==========================================
 class PublicMenuItemListView(generics.ListAPIView):
+    authentication_classes = []
     serializer_class = MenuItemSerializer
     permission_classes = [AllowAny]
     pagination_class = None
@@ -174,6 +176,7 @@ from rest_framework.views import APIView
 # 🌟 HOME PAGE SINGLE COMPOSITE API
 # ==========================================
 class PublicHomeDataView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):

@@ -651,10 +651,14 @@ class CookieTokenRefreshView(APIView):
             token_ver = refresh.payload.get('token_version')
             expected_ver = getattr(user_obj, 'token_version', 1) or 1 if user_obj else 1
             if token_ver is None or token_ver != expected_ver:
-                return Response(
+                resp = Response(
                     {"error": "Session expired. Token revoked by logout or missing version. Please login again."},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
+                for k in ['access_token', 'refresh_token', 'access', 'refresh']:
+                    resp.delete_cookie(k, path='/', samesite='Lax')
+                    resp.delete_cookie(k, path='/')
+                return resp
 
             # Blacklist old refresh token before issuing rotated one (F05 fix)
             try:
@@ -718,7 +722,11 @@ class CookieTokenRefreshView(APIView):
             return response
 
         except TokenError:
-            return Response({"error": "Invalid or expired refresh token. Please login again."}, status=status.HTTP_401_UNAUTHORIZED)
+            resp = Response({"error": "Invalid or expired refresh token. Please login again."}, status=status.HTTP_401_UNAUTHORIZED)
+            for k in ['access_token', 'refresh_token', 'access', 'refresh']:
+                resp.delete_cookie(k, path='/', samesite='Lax')
+                resp.delete_cookie(k, path='/')
+            return resp
 
 
 class LogoutView(APIView):

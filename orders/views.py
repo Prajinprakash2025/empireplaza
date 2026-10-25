@@ -219,6 +219,7 @@ class DeliveryEstimateView(APIView):
     Public or Authenticated endpoint to estimate delivery distance and fee
     before placing an order. Supports address_id or direct latitude/longitude.
     """
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):

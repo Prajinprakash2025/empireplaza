@@ -15,6 +15,12 @@ CACHE_TIMEOUT_SECONDS = 30
 class SiteSettingRetrieveUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = SiteSettingSerializer
 
+    def get_authenticators(self):
+        # Anyone can view settings without requiring valid JWT cookies
+        if self.request.method == 'GET':
+            return []
+        return super().get_authenticators()
+
     def get_permissions(self):
         # Anyone can view settings
         if self.request.method == 'GET':
