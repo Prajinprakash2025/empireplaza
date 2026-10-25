@@ -249,14 +249,20 @@ class OrderReadSerializer(serializers.ModelSerializer):
                 boy = obj.delivery_details.delivery_boy
                 profile = getattr(boy, 'delivery_profile', None)
                 name = (boy.get_full_name() or boy.username or boy.phone_number).strip()
+
+                req = self.context.get('request')
+                raw_phone = boy.phone_number or ''
+                is_privileged = req and req.user and (req.user.is_staff or getattr(req.user, 'role', '') in ['admin', 'employee'] or req.user.id == obj.user_id or req.user.id == boy.id)
+                display_phone = raw_phone if is_privileged else (f"******{raw_phone[-4:]}" if len(raw_phone) >= 4 else "******")
+
                 return {
                     'id': boy.id,
                     'name': name,
-                    'phone': boy.phone_number,
+                    'phone': display_phone,
                     'employee_id': getattr(boy, 'employee_id', None),
                     'status': obj.delivery_details.status,
-                    'latitude': profile.current_latitude if profile else None,
-                    'longitude': profile.current_longitude if profile else None,
+                    'latitude': profile.current_latitude if (profile and is_privileged) else None,
+                    'longitude': profile.current_longitude if (profile and is_privileged) else None,
                 }
         except Exception:
             pass

@@ -1,12 +1,12 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from django.conf import settings
+from django.core.cache import cache
 
 class StrictCookieJWTAuthentication(JWTAuthentication):
     """
-    Strict Cookie-Only JWT Authentication with CSRF / Origin enforcement.
-    Reads access_token strictly from HTTP HttpOnly cookies.
-    Enforces Origin / Referer validation on mutating HTTP methods to prevent CSRF.
+    Strict Cookie-Only JWT Authentication with CSRF / Origin enforcement
+    and instant post-logout token revocation (F05 & F06 fix).
     """
     def enforce_csrf(self, request):
         # Safe methods don't mutate state
@@ -58,7 +58,23 @@ class StrictCookieJWTAuthentication(JWTAuthentication):
 
         try:
             validated_token = self.get_validated_token(raw_token)
-            return self.get_user(validated_token), validated_token
+            user = self.get_user(validated_token)
+
+            # F05 FIX: Check if this token's JTI was explicitly blacklisted upon logout
+            jti = validated_token.get('jti')
+            if jti and cache.get(f"blacklisted_access_jti_{jti}"):
+                raise AuthenticationFailed('Token has been revoked by logout.')
+
+            # F05 FIX: Check if user was logged out after this token was issued (revokes copied tokens)
+            user_logout_time = cache.get(f"user_logout_time_{user.id}")
+            token_iat = validated_token.get('iat')
+            if user_logout_time and token_iat and token_iat <= user_logout_time:
+                raise AuthenticationFailed('Session expired. Token revoked by logout.')
+
+            if not user.is_active:
+                raise AuthenticationFailed('User account is deactivated.')
+
+            return user, validated_token
         except (AuthenticationFailed, PermissionDenied):
             raise
         except Exception:

@@ -31,30 +31,45 @@ def get_pusher_client():
 
 def sanitize_order_payload(data: dict) -> dict:
     """
-    F03 FIX: Redacts customer PII before broadcasting on shared/public channels.
-    Strips raw customer phone number, full street address, and exact coordinates.
-    Authorized clients fetch complete order records through authenticated REST API endpoints.
+    F03 FIX: Redacts customer PII and rider GPS before broadcasting on shared/public channels.
+    Strips raw customer/rider phone numbers, full street address, and live GPS coordinates.
+    Authorized clients fetch complete telemetry through authenticated REST API endpoints.
     """
     if not isinstance(data, dict):
         return data
 
     sanitized = dict(data)
 
-    # Redact customer phone
+    # 1. Mask Customer & Rider Phone Numbers
     if 'customer_phone' in sanitized and sanitized['customer_phone']:
         phone = str(sanitized['customer_phone'])
         sanitized['customer_phone'] = f"******{phone[-4:]}" if len(phone) >= 4 else "******"
 
-    # Redact customer street address
+    if 'phone' in sanitized and sanitized['phone']:
+        phone = str(sanitized['phone'])
+        sanitized['phone'] = f"******{phone[-4:]}" if len(phone) >= 4 else "******"
+
+    if isinstance(sanitized.get('delivery_boy'), dict):
+        db = dict(sanitized['delivery_boy'])
+        if db.get('phone'):
+            phone = str(db['phone'])
+            db['phone'] = f"******{phone[-4:]}" if len(phone) >= 4 else "******"
+        db['latitude'] = None
+        db['longitude'] = None
+        sanitized['delivery_boy'] = db
+
+    # 2. Redact Delivery Address
     if 'delivery_address' in sanitized and sanitized['delivery_address']:
         parts = str(sanitized['delivery_address']).split(',')
         sanitized['delivery_address'] = parts[-2].strip() if len(parts) >= 2 else "Delivery Address Protected"
 
-    # Redact customer GPS coordinates from public stream
-    if 'delivery_latitude' in sanitized:
-        sanitized['delivery_latitude'] = None
-    if 'delivery_longitude' in sanitized:
-        sanitized['delivery_longitude'] = None
+    # 3. Redact ALL GPS Coordinates from Public Streams (Customer & Rider)
+    for coord_key in ['latitude', 'longitude', 'delivery_latitude', 'delivery_longitude']:
+        if coord_key in sanitized:
+            sanitized[coord_key] = None
+
+    if 'active_order_ids' in sanitized:
+        sanitized['active_order_ids'] = []
 
     if 'special_instructions' in sanitized:
         sanitized['special_instructions'] = ''
@@ -66,7 +81,7 @@ def trigger_order_event(event_name: str, data: dict, channel_name: str = 'orders
     """
     Safely trigger real-time order events via Pusher.
     Wrapped in try-except so real-time notification issues never break DB transactions.
-    Automatically sanitizes customer PII for shared channels.
+    Automatically sanitizes customer PII and rider GPS telemetry for shared channels.
     """
     try:
         client = get_pusher_client()

@@ -1121,6 +1121,44 @@ class RazorpayVerifyPaymentView(APIView):
                     "error": "Delivery address ID is required to finalize order."
                 }, status=status.HTTP_400_BAD_REQUEST)
 
+            # CRITICAL F02 FIX: Compute current cart total and verify against PaymentAttempt amount BEFORE checkout!
+            cart = Cart.objects.filter(user=request.user).first()
+            if not cart or not cart.items.exists():
+                return Response({"status": False, "error": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
+
+            cart_subtotal = Decimal('0.00')
+            for item in cart.items.select_related('menu_item', 'variant'):
+                price = (
+                    item.variant.offer_price or item.variant.actual_price
+                    if item.variant
+                    else item.menu_item.offer_price or item.menu_item.actual_price
+                ) or Decimal('0.00')
+                pkg = (
+                    item.variant.packing_charge
+                    if item.variant and item.variant.packing_charge is not None
+                    else item.menu_item.packing_charge
+                ) or Decimal('0.00')
+                cart_subtotal += (Decimal(str(price)) + Decimal(str(pkg))) * item.quantity
+
+            delivery_fee = Decimal('0.00')
+            addr = Address.objects.filter(id=address_id, user=request.user).first()
+            site_settings = SiteSetting.objects.first()
+            if addr and site_settings and addr.latitude and addr.longitude and site_settings.latitude and site_settings.longitude:
+                dist_km = calculate_haversine_distance_km(
+                    site_settings.latitude, site_settings.longitude,
+                    addr.latitude, addr.longitude
+                )
+                delivery_fee = calculate_delivery_fee(dist_km, cart_subtotal, site_settings)
+
+            current_cart_total = cart_subtotal + delivery_fee
+
+            # Price-binding verification: reject if cart total has changed since payment attempt creation
+            if Decimal(str(current_cart_total)) != Decimal(str(attempt.amount)):
+                return Response({
+                    "status": False,
+                    "error": f"Payment amount mismatch: Payment attempt authorized for ₹{attempt.amount}, but cart total is ₹{current_cart_total}. Checkout rejected."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             checkout_data = {
                 'address_id': address_id,
                 'special_instructions': special_instructions,
@@ -1137,6 +1175,15 @@ class RazorpayVerifyPaymentView(APIView):
             )
             serializer.is_valid(raise_exception=True)
             order = serializer.save()
+
+            # Second-layer post-creation verification: ensure final order total price matches attempt amount exactly
+            if Decimal(str(order.total_price)) != Decimal(str(attempt.amount)):
+                transaction.set_rollback(True)
+                return Response({
+                    "status": False,
+                    "error": f"Payment amount mismatch: Final order price ₹{order.total_price} does not match authorized amount ₹{attempt.amount}."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             order.payment_status = 'completed'
             order.status = 'preparing'
             order.razorpay_order_id = razorpay_order_id

@@ -658,39 +658,44 @@ class CookieTokenRefreshView(APIView):
 
 class LogoutView(APIView):
     """
-    Allows anyone (even with expired tokens) to logout and clear cookies safely.
-    If a delivery boy logs out, automatically marks them offline and broadcasts to admin fleet map.
+    Safely logs out the user, blacklists their refresh token and access token JTI,
+    invalidates copied tokens, and only marks delivery riders offline if cryptographically verified.
     """
     authentication_classes = []
-    permission_classes = [permissions.AllowAny]  # Allowed for all to prevent 401 on expired tokens
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        # Extract user if available to mark delivery boy offline
         user = None
-        token = request.COOKIES.get('access_token')
-        if token:
+        access_tok = request.COOKIES.get('access_token') or request.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        refresh_tok = request.COOKIES.get('refresh_token')
+
+        # F04 FIX: Cryptographically verify user identity ONLY. NEVER decode unsigned tokens!
+        if access_tok:
             try:
                 from rest_framework_simplejwt.tokens import AccessToken
-                validated_token = AccessToken(token)
+                validated_token = AccessToken(access_tok)
                 user = User.objects.filter(id=validated_token['user_id']).first()
+
+                # F05 FIX: Revoke this specific access token JTI immediately
+                jti = validated_token.get('jti')
+                if jti:
+                    cache.set(f"blacklisted_access_jti_{jti}", True, timeout=7 * 86400)
             except Exception:
-                try:
-                    import jwt
-                    payload = jwt.decode(token, options={"verify_signature": False})
-                    user = User.objects.filter(id=payload.get('user_id')).first()
-                except Exception:
-                    pass
+                user = None
 
-        if not user:
-            refresh_tok = request.COOKIES.get('refresh_token')
-            if refresh_tok:
-                try:
-                    import jwt
-                    payload = jwt.decode(refresh_tok, options={"verify_signature": False})
-                    user = User.objects.filter(id=payload.get('user_id')).first()
-                except Exception:
-                    pass
+        if not user and refresh_tok:
+            try:
+                from rest_framework_simplejwt.tokens import RefreshToken
+                validated_refresh = RefreshToken(refresh_tok)
+                user = User.objects.filter(id=validated_refresh['user_id']).first()
+            except Exception:
+                user = None
 
+        # F05 FIX: Revoke ALL previously copied tokens for this user upon logout
+        if user:
+            cache.set(f"user_logout_time_{user.id}", timezone.now().timestamp(), timeout=30 * 86400)
+
+        # F04 FIX: Only mutate delivery boy profile if cryptographically authenticated!
         if user and getattr(user, 'role', '') == 'delivery_boy':
             try:
                 profile = getattr(user, 'delivery_profile', None)
@@ -710,6 +715,15 @@ class LogoutView(APIView):
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).warning(f"Error marking delivery boy offline on logout: {e}")
+
+        # F05 FIX: Blacklist refresh token in database
+        if refresh_tok:
+            try:
+                from rest_framework_simplejwt.tokens import RefreshToken
+                rf = RefreshToken(refresh_tok)
+                rf.blacklist()
+            except Exception:
+                pass
 
         response = Response({"message": "Logged out successfully"}, status=status.HTTP_200_OK)
         cookie_keys = ['access_token', 'refresh_token', 'delivery_session_token', 'user_role', 'username', 'access', 'refresh']
