@@ -1157,14 +1157,6 @@ class RazorpayVerifyPaymentView(APIView):
                 else:
                     delivery_fee = calculate_delivery_fee(0.0, cart_subtotal, site_settings)
 
-            if attempt.cart_snapshot and isinstance(attempt.cart_snapshot, dict):
-                snap_fee = attempt.cart_snapshot.get('delivery_fee')
-                if snap_fee is not None:
-                    try:
-                        delivery_fee = Decimal(str(snap_fee))
-                    except Exception:
-                        pass
-
             current_cart_total = cart_subtotal + delivery_fee
 
             # Price-binding verification: reject if cart total has changed since payment attempt creation
@@ -1178,7 +1170,6 @@ class RazorpayVerifyPaymentView(APIView):
                 'address_id': address_id,
                 'special_instructions': special_instructions,
                 'payment_method': 'online',
-                'delivery_fee': delivery_fee,
             }
             serializer = CheckoutSerializer(
                 data=checkout_data,
@@ -1187,6 +1178,7 @@ class RazorpayVerifyPaymentView(APIView):
                     'verified_online_payment': True,
                     'razorpay_order_id': razorpay_order_id,
                     'razorpay_payment_id': razorpay_payment_id,
+                    'authorized_delivery_fee': delivery_fee,
                 }
             )
             serializer.is_valid(raise_exception=True)

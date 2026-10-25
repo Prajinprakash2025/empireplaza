@@ -122,6 +122,9 @@ def get_tokens_for_user(user):
     refresh['username'] = user.username
     if user.employee_id:
         refresh['employee_id'] = user.employee_id
+    version = getattr(user, 'token_version', 1) or 1
+    refresh['token_version'] = version
+    refresh.access_token['token_version'] = version
     return refresh
 
 class SendOTPView(APIView):
@@ -610,6 +613,9 @@ class CookieTokenRefreshView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        from accounts.authentication import enforce_csrf_protection
+        enforce_csrf_protection(request)
+
         refresh_token = request.COOKIES.get('refresh_token')
 
         if not refresh_token:
@@ -619,7 +625,19 @@ class CookieTokenRefreshView(APIView):
             refresh = RefreshToken(refresh_token)
 
             user_id = refresh.payload.get('user_id')
-            user_logout_time = cache.get(f"user_logout_time_{user_id}")
+            user_obj = User.objects.filter(id=user_id).first() if user_id else None
+
+            # R4-01 FIX: Persistent token_version verification
+            if user_obj:
+                token_ver = refresh.payload.get('token_version')
+                expected_ver = getattr(user_obj, 'token_version', 1) or 1
+                if token_ver is not None and token_ver != expected_ver:
+                    return Response(
+                        {"error": "Session expired. Token revoked by logout. Please login again."},
+                        status=status.HTTP_401_UNAUTHORIZED
+                    )
+
+            user_logout_time = cache.get(f"user_logout_time_{user_id}") if user_id else None
             token_iat = refresh.payload.get('iat')
             if user_logout_time and token_iat and token_iat <= int(user_logout_time):
                 return Response(
@@ -635,6 +653,10 @@ class CookieTokenRefreshView(APIView):
 
             refresh.set_jti()
             refresh.set_exp()
+            if user_obj:
+                ver = getattr(user_obj, 'token_version', 1) or 1
+                refresh['token_version'] = ver
+                refresh.access_token['token_version'] = ver
             new_access_token = str(refresh.access_token)
             new_refresh_token = str(refresh)
 
@@ -695,6 +717,9 @@ class LogoutView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        from accounts.authentication import enforce_csrf_protection
+        enforce_csrf_protection(request)
+
         user = None
         access_tok = request.COOKIES.get('access_token') or request.headers.get('Authorization', '').replace('Bearer ', '').strip()
         refresh_tok = request.COOKIES.get('refresh_token')
@@ -753,6 +778,8 @@ class LogoutView(APIView):
                     BlacklistedToken.objects.get_or_create(token=ot)
             except Exception:
                 pass
+            user.token_version = (getattr(user, 'token_version', 1) or 1) + 1
+            user.save(update_fields=['token_version'])
             cache.set(f"user_logout_time_{user.id}", timezone.now().timestamp(), timeout=30 * 86400)
 
         # F04 FIX: Only mutate delivery boy profile if cryptographically authenticated!

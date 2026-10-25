@@ -337,13 +337,6 @@ class CheckoutSerializer(serializers.Serializer):
         default='online'
     )
 
-    delivery_fee = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        required=False,
-        allow_null=True
-    )
-
     def validate(self, attrs):
 
         user = self.context['request'].user
@@ -561,7 +554,7 @@ class CheckoutSerializer(serializers.Serializer):
 
         delivery_fee = Decimal('0.00')
         if order_items_to_create:
-            authorized_fee = validated_data.get('delivery_fee')
+            authorized_fee = self.context.get('authorized_delivery_fee')
             if authorized_fee is not None:
                 delivery_fee = Decimal(str(authorized_fee))
             elif distance_km > 0.0:

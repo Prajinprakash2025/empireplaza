@@ -19,6 +19,7 @@ class CustomUser(AbstractUser):
     otp = models.CharField(max_length=6, blank=True, null=True)
     otp_created_at = models.DateTimeField(blank=True, null=True)
     is_verified = models.BooleanField(default=False)
+    token_version = models.PositiveIntegerField(default=1)
 
     USERNAME_FIELD = 'phone_number'
     REQUIRED_FIELDS = ['username']

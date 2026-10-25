@@ -25,6 +25,11 @@ def enforce_csrf_protection(request):
             parsed = urlparse(referer)
             origin = f"{parsed.scheme}://{parsed.netloc}"
 
+    # F06/R4-03 FIX: On HTTPS mutating requests, require Origin or Referer
+    is_https = request.is_secure() or request.META.get('HTTP_X_FORWARDED_PROTO') == 'https'
+    if is_https and not origin:
+        raise PermissionDenied('CSRF Failed: Origin or Referer header required on HTTPS.')
+
     if origin:
         allowed_origins = getattr(settings, 'CORS_ALLOWED_ORIGINS', [])
         try:
@@ -79,7 +84,13 @@ class StrictCookieJWTAuthentication(JWTAuthentication):
                     cache.set(f"blacklisted_access_jti_{jti}", True, timeout=7 * 86400)
                     raise AuthenticationFailed('Token has been revoked by logout.')
 
-            # Check if user was logged out before this token was issued (user-wide revocation)
+            # R4-01 FIX: Persistent token_version verification across all sessions and cache loss
+            token_ver = validated_token.get('token_version')
+            expected_ver = getattr(user, 'token_version', 1) or 1
+            if token_ver is not None and token_ver != expected_ver:
+                raise AuthenticationFailed('Session expired. Token revoked by logout.')
+
+            # Check if user was logged out before this token was issued (user-wide revocation fallback)
             user_logout_time = cache.get(f"user_logout_time_{user.id}")
             token_iat = validated_token.get('iat')
             if user_logout_time and token_iat and token_iat < int(user_logout_time):
