@@ -1,3 +1,4 @@
+from accounts.authentication import OptionalStrictCookieJWTAuthentication
 from datetime import datetime, time, timedelta
 from django.utils import timezone
 from django.db.models import Prefetch, Q, Sum, Count, Avg, F
@@ -217,9 +218,9 @@ class CheckoutView(APIView):
 class DeliveryEstimateView(APIView):
     """
     Public or Authenticated endpoint to estimate delivery distance and fee
-    before placing an order. Supports address_id or direct latitude/longitude.
+    before placing an order. Supports address_id (authenticated, owner-scoped) or direct latitude/longitude.
     """
-    authentication_classes = []
+    authentication_classes = [OptionalStrictCookieJWTAuthentication]
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
@@ -239,19 +240,28 @@ class DeliveryEstimateView(APIView):
 
         cust_lat, cust_lng = None, None
         if address_id:
+            if not request.user or not request.user.is_authenticated:
+                return Response(
+                    {"status": False, "error": "Authentication required to estimate delivery for saved addresses."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
             try:
-                addr = Address.objects.get(id=address_id)
+                addr_id = int(str(address_id).strip())
+                if addr_id <= 0:
+                    raise ValueError()
+                addr = Address.objects.get(id=addr_id, user=request.user)
                 cust_lat, cust_lng = addr.latitude, addr.longitude
                 if (cust_lat is None or cust_lng is None or (cust_lat == 0 and cust_lng == 0)):
                     from .distance_utils import geocode_address
                     g_lat, g_lng = geocode_address(addr.address_line, addr.city, addr.pincode)
                     if g_lat and g_lng:
                         cust_lat, cust_lng = g_lat, g_lng
-                        addr.latitude = g_lat
-                        addr.longitude = g_lng
-                        addr.save(update_fields=['latitude', 'longitude'])
-            except Address.DoesNotExist:
-                pass
+                        # Read-only GET estimate: do NOT mutate or save address coordinates to DB
+            except (ValueError, TypeError, Address.DoesNotExist):
+                return Response(
+                    {"status": False, "error": "Address not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
         if (cust_lat is None or cust_lng is None) and lat and lng:
             try:

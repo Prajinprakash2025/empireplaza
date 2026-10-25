@@ -98,3 +98,18 @@ class StrictCookieJWTAuthentication(JWTAuthentication):
             raise
         except Exception:
             raise AuthenticationFailed('Invalid or expired cookie token')
+
+class OptionalStrictCookieJWTAuthentication(StrictCookieJWTAuthentication):
+    """
+    Cookie JWT Authentication that enforces strict authentication when address_id
+    is requested, but silently ignores invalid/expired tokens for public coordinate queries.
+    """
+    def authenticate(self, request):
+        has_address_id = bool(request.GET.get('address_id'))
+        try:
+            return super().authenticate(request)
+        except (AuthenticationFailed, PermissionDenied):
+            if has_address_id:
+                raise
+            return None
+

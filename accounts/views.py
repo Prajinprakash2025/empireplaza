@@ -1030,10 +1030,21 @@ class DeliveryBoyLoginView(APIView):
 
 from .models import ContactMessage
 from .serializers import ContactMessageCreateSerializer, ContactMessageSerializer
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import SimpleRateThrottle
 
-class ContactFormThrottle(AnonRateThrottle):
+class ContactFormThrottle(SimpleRateThrottle):
+    scope = 'contact_form'
     rate = '5/hour'
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            ident = f"user_{request.user.pk}"
+        else:
+            ident = f"anon_{self.get_ident(request)}"
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': ident
+        }
 
 class ContactMessagePagination(PageNumberPagination):
     page_size = 10
@@ -1087,10 +1098,21 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
 
 from .models import TableBooking
 from .serializers import TableBookingSerializer, TableBookingAdminUpdateSerializer
-# Throttle Security: Max 5 table bookings per hour per IP address
-class TableBookingThrottle(AnonRateThrottle):
+
+class TableBookingThrottle(SimpleRateThrottle):
+    scope = 'table_booking'
     rate = '5/hour'
-    
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            ident = f"user_{request.user.pk}"
+        else:
+            ident = f"anon_{self.get_ident(request)}"
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': ident
+        }
+
 class TableBookingViewSet(viewsets.ModelViewSet):
     """
     Anyone can create a table booking (POST) with rate limiting protection.
@@ -1100,7 +1122,7 @@ class TableBookingViewSet(viewsets.ModelViewSet):
     def get_throttles(self):
         if self.action == 'create':
             return [TableBookingThrottle()]
-        return super().get_throttles()
+        return []
 
     def get_serializer_class(self):
         if self.action in ['update', 'partial_update']:
@@ -1142,6 +1164,21 @@ class AddressViewSet(viewsets.ModelViewSet):
 
         if is_default:
             Address.objects.filter(user=user, is_default=True).update(is_default=False)
+
+        lat = serializer.validated_data.get('latitude')
+        lng = serializer.validated_data.get('longitude')
+        if (lat is None or lng is None or (lat == 0 and lng == 0)):
+            try:
+                from orders.distance_utils import geocode_address
+                addr_line = serializer.validated_data.get('address_line', '')
+                city = serializer.validated_data.get('city', '')
+                pincode = serializer.validated_data.get('pincode', '')
+                g_lat, g_lng = geocode_address(addr_line, city, pincode)
+                if g_lat and g_lng:
+                    serializer.save(user=user, is_default=is_default, latitude=g_lat, longitude=g_lng)
+                    return
+            except Exception:
+                pass
 
         serializer.save(user=user, is_default=is_default)
 

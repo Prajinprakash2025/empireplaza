@@ -121,9 +121,9 @@ class CartReadSerializer(serializers.ModelSerializer):
         total = Decimal('0.00')
         for item in obj.items.all():
             pkg = Decimal('0.00')
-            if item.variant and item.variant.packing_charge is not None and item.variant.packing_charge > 0:
+            if item.variant and item.variant.packing_charge is not None:
                 pkg = Decimal(str(item.variant.packing_charge))
-            elif item.menu_item and item.menu_item.packing_charge:
+            elif item.menu_item and item.menu_item.packing_charge is not None:
                 pkg = Decimal(str(item.menu_item.packing_charge))
             total += pkg * item.quantity
         return str(total)
@@ -523,9 +523,9 @@ class CheckoutSerializer(serializers.Serializer):
 
             # Variant packing charge or base item fallback
             pkg = Decimal('0.00')
-            if variant and variant.packing_charge is not None and variant.packing_charge > 0:
+            if variant and variant.packing_charge is not None:
                 pkg = Decimal(str(variant.packing_charge))
-            elif menu_item and menu_item.packing_charge:
+            elif menu_item and menu_item.packing_charge is not None:
                 pkg = Decimal(str(menu_item.packing_charge))
             total_price += pkg * item.quantity
 
