@@ -637,13 +637,15 @@ class CookieTokenRefreshView(APIView):
                         status=status.HTTP_401_UNAUTHORIZED
                     )
 
-            user_logout_time = cache.get(f"user_logout_time_{user_id}") if user_id else None
-            token_iat = refresh.payload.get('iat')
-            if user_logout_time and token_iat and token_iat <= int(user_logout_time):
-                return Response(
-                    {"error": "Session expired. Token revoked by logout. Please login again."},
-                    status=status.HTTP_401_UNAUTHORIZED
-                )
+            token_ver = refresh.payload.get('token_version')
+            if token_ver is None and user_id:
+                user_logout_time = cache.get(f"user_logout_time_{user_id}")
+                token_iat = refresh.payload.get('iat')
+                if user_logout_time and token_iat and token_iat <= int(user_logout_time):
+                    return Response(
+                        {"error": "Session expired. Token revoked by logout. Please login again."},
+                        status=status.HTTP_401_UNAUTHORIZED
+                    )
 
             # Blacklist old refresh token before issuing rotated one (F05 fix)
             try:
@@ -656,8 +658,10 @@ class CookieTokenRefreshView(APIView):
             if user_obj:
                 ver = getattr(user_obj, 'token_version', 1) or 1
                 refresh['token_version'] = ver
-                refresh.access_token['token_version'] = ver
-            new_access_token = str(refresh.access_token)
+            acc = refresh.access_token
+            if user_obj:
+                acc['token_version'] = ver
+            new_access_token = str(acc)
             new_refresh_token = str(refresh)
 
             if user_id:

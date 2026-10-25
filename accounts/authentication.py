@@ -90,11 +90,12 @@ class StrictCookieJWTAuthentication(JWTAuthentication):
             if token_ver is not None and token_ver != expected_ver:
                 raise AuthenticationFailed('Session expired. Token revoked by logout.')
 
-            # Check if user was logged out before this token was issued (user-wide revocation fallback)
-            user_logout_time = cache.get(f"user_logout_time_{user.id}")
-            token_iat = validated_token.get('iat')
-            if user_logout_time and token_iat and token_iat < int(user_logout_time):
-                raise AuthenticationFailed('Session expired. Token revoked by logout.')
+            # Check if user was logged out before this token was issued (legacy fallback for tokens without version)
+            if token_ver is None:
+                user_logout_time = cache.get(f"user_logout_time_{user.id}")
+                token_iat = validated_token.get('iat')
+                if user_logout_time and token_iat and token_iat < int(user_logout_time):
+                    raise AuthenticationFailed('Session expired. Token revoked by logout.')
 
             if not user.is_active:
                 raise AuthenticationFailed('User account is deactivated.')
