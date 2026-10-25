@@ -229,10 +229,30 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 # Security Hardening Headers
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
-if not DEBUG:
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+# Caching Configuration: Shared Redis on VPS, in-memory LocMemCache in tests
+REDIS_URL = os.getenv('REDIS_URL')
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'KEY_PREFIX': 'empireplaza',
+            'TIMEOUT': 300,
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'empireplaza-locmem',
+            'KEY_PREFIX': 'empireplaza',
+            'TIMEOUT': 300,
+        }
+    }
 
 # 30-day persistence for Django sessions and cookies
 SESSION_COOKIE_AGE = 30 * 24 * 60 * 60  # 2,592,000 seconds (30 days)
