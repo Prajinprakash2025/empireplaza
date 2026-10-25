@@ -234,16 +234,16 @@ class VerifyOTPView(APIView):
         user.otp_created_at = None
         user.save()
 
+        cache.delete(f"user_logout_time_{user.id}")
         refresh = get_tokens_for_user(user)
 
         user_name = user.first_name if user.first_name else ""
         welcome_message = f"Welcome back, {user_name}!" if user_name else "Welcome to Empire Plaza!"
 
+        cache.delete(f"user_logout_time_{user.id}")
         response = Response({
             "status": True,
             "message": welcome_message,
-            "access_token": str(refresh.access_token),
-            "refresh_token": str(refresh),
             "user": UserSerializer(user).data
         }, status=status.HTTP_200_OK)
 
@@ -350,6 +350,7 @@ class FirebaseVerifyView(APIView):
                 is_verified=True,
             )
 
+        cache.delete(f"user_logout_time_{user.id}")
         refresh = get_tokens_for_user(user)
 
         user_name = user.first_name if user.first_name else ""
@@ -426,6 +427,7 @@ class StaffAndAdminLoginView(APIView):
             user.role = 'admin'
             user.save()
 
+        cache.delete(f"user_logout_time_{user.id}")
         refresh = get_tokens_for_user(user)
 
         response = Response({
@@ -616,6 +618,15 @@ class CookieTokenRefreshView(APIView):
         try:
             refresh = RefreshToken(refresh_token)
 
+            user_id = refresh.payload.get('user_id')
+            user_logout_time = cache.get(f"user_logout_time_{user_id}")
+            token_iat = refresh.payload.get('iat')
+            if user_logout_time and token_iat and token_iat <= int(user_logout_time):
+                return Response(
+                    {"error": "Session expired. Token revoked by logout. Please login again."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+
             # Blacklist old refresh token before issuing rotated one (F05 fix)
             try:
                 refresh.blacklist()
@@ -626,6 +637,25 @@ class CookieTokenRefreshView(APIView):
             refresh.set_exp()
             new_access_token = str(refresh.access_token)
             new_refresh_token = str(refresh)
+
+            if user_id:
+                try:
+                    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+                    from datetime import datetime, timezone as dtz
+                    user_obj = User.objects.filter(id=user_id).first()
+                    if user_obj:
+                        exp_dt = datetime.fromtimestamp(refresh['exp'], tz=dtz.utc) if refresh.get('exp') else timezone.now() + timedelta(days=30)
+                        OutstandingToken.objects.get_or_create(
+                            jti=refresh['jti'],
+                            defaults={
+                                'user': user_obj,
+                                'token': new_refresh_token,
+                                'created_at': timezone.now(),
+                                'expires_at': exp_dt
+                            }
+                        )
+                except Exception:
+                    pass
 
             response = Response({"message": "Token refreshed successfully"}, status=status.HTTP_200_OK)
             is_secure = get_cookie_secure(request)
@@ -691,8 +721,38 @@ class LogoutView(APIView):
             except Exception:
                 user = None
 
-        # F05 FIX: Revoke ALL previously copied tokens for this user upon logout
+        # F05 FIX: Revoke access token in database for cross-worker durability
+        if access_tok and user:
+            try:
+                from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+                from datetime import datetime, timezone as dtz
+                acc = AccessToken(access_tok)
+                acc_jti = acc.get('jti')
+                acc_exp = acc.get('exp')
+                if acc_jti:
+                    cache.set(f"blacklisted_access_jti_{acc_jti}", True, timeout=7 * 86400)
+                    exp_dt = datetime.fromtimestamp(acc_exp, tz=dtz.utc) if acc_exp else timezone.now() + timedelta(days=7)
+                    ot, _ = OutstandingToken.objects.get_or_create(
+                        jti=acc_jti,
+                        defaults={
+                            'user': user,
+                            'token': str(access_tok),
+                            'created_at': timezone.now(),
+                            'expires_at': exp_dt
+                        }
+                    )
+                    BlacklistedToken.objects.get_or_create(token=ot)
+            except Exception:
+                pass
+
+        # F05 FIX: Revoke ALL previously copied tokens for this user upon logout (both cache and DB)
         if user:
+            try:
+                from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+                for ot in OutstandingToken.objects.filter(user=user):
+                    BlacklistedToken.objects.get_or_create(token=ot)
+            except Exception:
+                pass
             cache.set(f"user_logout_time_{user.id}", timezone.now().timestamp(), timeout=30 * 86400)
 
         # F04 FIX: Only mutate delivery boy profile if cryptographically authenticated!
@@ -823,6 +883,7 @@ class DeliveryBoyLoginView(APIView):
         profile.active_session_token = new_session_token
         profile.save(update_fields=['active_session_token'])
 
+        cache.delete(f"user_logout_time_{user.id}")
         refresh = get_tokens_for_user(user)
 
         response = Response({

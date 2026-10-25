@@ -976,6 +976,10 @@ class RazorpayCreateOrderView(APIView):
                             "status": False,
                             "error": f"Delivery location coordinates required. Your address must be verified within {max_radius:.1f} KM of Empire Plaza."
                         }, status=status.HTTP_400_BAD_REQUEST)
+                    else:
+                        delivery_fee = calculate_delivery_fee(0.0, subtotal, site_settings)
+                elif site_settings:
+                    delivery_fee = calculate_delivery_fee(0.0, subtotal, site_settings)
             except Address.DoesNotExist:
                 return Response({
                     "status": False,
@@ -1143,12 +1147,23 @@ class RazorpayVerifyPaymentView(APIView):
             delivery_fee = Decimal('0.00')
             addr = Address.objects.filter(id=address_id, user=request.user).first()
             site_settings = SiteSetting.objects.first()
-            if addr and site_settings and addr.latitude and addr.longitude and site_settings.latitude and site_settings.longitude:
-                dist_km = calculate_haversine_distance_km(
-                    site_settings.latitude, site_settings.longitude,
-                    addr.latitude, addr.longitude
-                )
-                delivery_fee = calculate_delivery_fee(dist_km, cart_subtotal, site_settings)
+            if addr and site_settings:
+                if addr.latitude and addr.longitude and site_settings.latitude and site_settings.longitude:
+                    dist_km = calculate_haversine_distance_km(
+                        site_settings.latitude, site_settings.longitude,
+                        addr.latitude, addr.longitude
+                    )
+                    delivery_fee = calculate_delivery_fee(dist_km, cart_subtotal, site_settings)
+                else:
+                    delivery_fee = calculate_delivery_fee(0.0, cart_subtotal, site_settings)
+
+            if attempt.cart_snapshot and isinstance(attempt.cart_snapshot, dict):
+                snap_fee = attempt.cart_snapshot.get('delivery_fee')
+                if snap_fee is not None:
+                    try:
+                        delivery_fee = Decimal(str(snap_fee))
+                    except Exception:
+                        pass
 
             current_cart_total = cart_subtotal + delivery_fee
 
@@ -1163,6 +1178,7 @@ class RazorpayVerifyPaymentView(APIView):
                 'address_id': address_id,
                 'special_instructions': special_instructions,
                 'payment_method': 'online',
+                'delivery_fee': delivery_fee,
             }
             serializer = CheckoutSerializer(
                 data=checkout_data,
