@@ -375,6 +375,16 @@ class UpdateLocationView(APIView):
             })
 
         # Case 2: Active GPS coordinates update
+        accuracy = request.data.get('accuracy')
+        accuracy_val = None
+        if accuracy is not None:
+            try:
+                accuracy_val = float(accuracy)
+                from django.core.cache import cache
+                cache.set(f"rider_accuracy_{request.user.id}", accuracy_val, timeout=300)
+            except Exception:
+                pass
+
         try:
             profile.current_latitude = float(latitude)
             profile.current_longitude = float(longitude)
@@ -389,6 +399,7 @@ class UpdateLocationView(APIView):
             'delivery_boy_id': request.user.id,
             'latitude': float(latitude),
             'longitude': float(longitude),
+            'accuracy': accuracy_val,
             'is_on_duty': profile.is_on_duty,
             'is_busy': profile.is_busy,
             'is_gps_active': True,
@@ -400,6 +411,7 @@ class UpdateLocationView(APIView):
             "status": True, 
             "latitude": float(latitude), 
             "longitude": float(longitude),
+            "accuracy": accuracy_val,
             "is_on_duty": profile.is_on_duty,
             "is_gps_active": True,
             "last_seen": last_seen_iso

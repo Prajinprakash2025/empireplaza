@@ -126,14 +126,22 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
 class DeliveryBoyProfileSerializer(serializers.ModelSerializer):
     is_gps_active = serializers.SerializerMethodField()
     last_seen_seconds_ago = serializers.SerializerMethodField()
+    gps_accuracy = serializers.SerializerMethodField()
 
     class Meta:
         model = DeliveryBoyProfile
         fields = [
             'vehicle_number', 'is_on_duty', 'is_busy', 
             'current_latitude', 'current_longitude', 'last_location_updated_at',
-            'is_gps_active', 'last_seen_seconds_ago'
+            'is_gps_active', 'last_seen_seconds_ago', 'gps_accuracy'
         ]
+
+    def get_gps_accuracy(self, obj):
+        from django.core.cache import cache
+        try:
+            return cache.get(f"rider_accuracy_{obj.user_id}")
+        except Exception:
+            return None
 
     def get_is_gps_active(self, obj):
         from django.utils import timezone
