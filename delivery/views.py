@@ -253,7 +253,12 @@ class ToggleDutyView(APIView):
             )
 
         profile.is_on_duty = not profile.is_on_duty
-        profile.save(update_fields=['is_on_duty'])
+        if not profile.is_on_duty:
+            profile.current_latitude = None
+            profile.current_longitude = None
+            profile.save(update_fields=['is_on_duty', 'current_latitude', 'current_longitude'])
+        else:
+            profile.save(update_fields=['is_on_duty'])
 
         # Broadcast real-time duty status (Online / Offline) to Admin Fleet Map & Customers
         trigger_order_event('delivery-duty-updated', {
@@ -261,6 +266,7 @@ class ToggleDutyView(APIView):
             'is_on_duty': profile.is_on_duty,
             'latitude': profile.current_latitude,
             'longitude': profile.current_longitude,
+            'is_gps_active': False if not profile.is_on_duty else None,
         })
 
         return Response({
@@ -310,41 +316,72 @@ class DeliveryProfileView(APIView):
 class UpdateLocationView(APIView):
     """
     Update delivery boy's live GPS coordinates and broadcast via Pusher.
+    Supports clearing location when GPS is lost or turned off.
     """
     permission_classes = [IsDeliveryBoy]
 
     def post(self, request):
+        gps_disabled = request.data.get('gps_disabled', False)
         latitude = request.data.get('latitude')
         longitude = request.data.get('longitude')
 
-        if latitude is None or longitude is None:
-            return Response(
-                {"error": "Latitude and Longitude are required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         try:
             profile = request.user.delivery_profile
-            
-            # F11 FIX: Enforce device session strictly
             session_err = verify_rider_device_session(request, profile)
             if session_err:
                 return session_err
-
-            profile.current_latitude = float(latitude)
-            profile.current_longitude = float(longitude)
-            profile.last_location_updated_at = timezone.now()
-            profile.save(update_fields=['current_latitude', 'current_longitude', 'last_location_updated_at'])
         except Exception:
             return Response({"error": "Delivery profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Broadcast live location for customers tracking their active orders and Admin Fleet Map
         active_order_ids = list(
             Delivery.objects.filter(
                 delivery_boy=request.user,
                 status='assigned'
             ).values_list('order_id', flat=True)
         )
+
+        # Case 1: GPS turned off, permission revoked, or explicit location clear
+        if gps_disabled or (latitude is None and longitude is None):
+            profile.current_latitude = None
+            profile.current_longitude = None
+            profile.last_location_updated_at = timezone.now()
+            profile.save(update_fields=['current_latitude', 'current_longitude', 'last_location_updated_at'])
+
+            last_seen_iso = profile.last_location_updated_at.isoformat()
+
+            trigger_order_event('delivery-location-lost', {
+                'delivery_boy_id': request.user.id,
+                'is_on_duty': profile.is_on_duty,
+                'is_gps_active': False,
+                'last_seen': last_seen_iso,
+                'active_order_ids': active_order_ids
+            })
+
+            trigger_order_event('delivery-location-updated', {
+                'delivery_boy_id': request.user.id,
+                'latitude': None,
+                'longitude': None,
+                'is_on_duty': profile.is_on_duty,
+                'is_busy': profile.is_busy,
+                'is_gps_active': False,
+                'last_seen': last_seen_iso,
+                'active_order_ids': active_order_ids
+            })
+
+            return Response({
+                "status": True,
+                "is_gps_active": False,
+                "message": "GPS location cleared."
+            })
+
+        # Case 2: Active GPS coordinates update
+        try:
+            profile.current_latitude = float(latitude)
+            profile.current_longitude = float(longitude)
+            profile.last_location_updated_at = timezone.now()
+            profile.save(update_fields=['current_latitude', 'current_longitude', 'last_location_updated_at'])
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid latitude or longitude format."}, status=status.HTTP_400_BAD_REQUEST)
 
         last_seen_iso = profile.last_location_updated_at.isoformat()
 
@@ -354,6 +391,7 @@ class UpdateLocationView(APIView):
             'longitude': float(longitude),
             'is_on_duty': profile.is_on_duty,
             'is_busy': profile.is_busy,
+            'is_gps_active': True,
             'last_seen': last_seen_iso,
             'active_order_ids': active_order_ids
         })
@@ -363,5 +401,6 @@ class UpdateLocationView(APIView):
             "latitude": float(latitude), 
             "longitude": float(longitude),
             "is_on_duty": profile.is_on_duty,
+            "is_gps_active": True,
             "last_seen": last_seen_iso
         })

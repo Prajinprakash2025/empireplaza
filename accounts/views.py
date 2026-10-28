@@ -853,16 +853,19 @@ class LogoutView(APIView):
                     profile = getattr(user, 'delivery_profile', None)
                     if profile:
                         profile.is_on_duty = False
+                        profile.current_latitude = None
+                        profile.current_longitude = None
                         profile.active_session_token = None
-                        profile.save(update_fields=['is_on_duty', 'active_session_token'])
+                        profile.save(update_fields=['is_on_duty', 'current_latitude', 'current_longitude', 'active_session_token'])
 
                         # Broadcast real-time duty offline status to Admin Fleet Map & Customers
                         from orders.pusher_utils import trigger_order_event
                         trigger_order_event('delivery-duty-updated', {
                             'delivery_boy_id': user.id,
                             'is_on_duty': False,
-                            'latitude': profile.current_latitude,
-                            'longitude': profile.current_longitude,
+                            'latitude': None,
+                            'longitude': None,
+                            'is_gps_active': False,
                         })
                 except Exception as e:
                     import logging

@@ -124,12 +124,39 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
 
 
 class DeliveryBoyProfileSerializer(serializers.ModelSerializer):
+    is_gps_active = serializers.SerializerMethodField()
+    last_seen_seconds_ago = serializers.SerializerMethodField()
+
     class Meta:
         model = DeliveryBoyProfile
         fields = [
             'vehicle_number', 'is_on_duty', 'is_busy', 
-            'current_latitude', 'current_longitude', 'last_location_updated_at'
+            'current_latitude', 'current_longitude', 'last_location_updated_at',
+            'is_gps_active', 'last_seen_seconds_ago'
         ]
+
+    def get_is_gps_active(self, obj):
+        from django.utils import timezone
+        if not obj.is_on_duty or obj.current_latitude is None or obj.current_longitude is None:
+            return False
+        if not obj.last_location_updated_at:
+            return False
+        return (timezone.now() - obj.last_location_updated_at).total_seconds() < 150
+
+    def get_last_seen_seconds_ago(self, obj):
+        from django.utils import timezone
+        if not obj.last_location_updated_at:
+            return None
+        return int(max(0, (timezone.now() - obj.last_location_updated_at).total_seconds()))
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not data.get('is_gps_active'):
+            data['last_known_latitude'] = data.get('current_latitude')
+            data['last_known_longitude'] = data.get('current_longitude')
+            data['current_latitude'] = None
+            data['current_longitude'] = None
+        return data
 
 
 class DeliveryBoyUserSerializer(serializers.ModelSerializer):

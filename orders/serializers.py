@@ -255,14 +255,21 @@ class OrderReadSerializer(serializers.ModelSerializer):
                 is_privileged = req and req.user and (req.user.is_staff or getattr(req.user, 'role', '') in ['admin', 'employee'] or req.user.id == obj.user_id or req.user.id == boy.id)
                 display_phone = raw_phone if is_privileged else (f"******{raw_phone[-4:]}" if len(raw_phone) >= 4 else "******")
 
+                from django.utils import timezone
+                is_fresh = False
+                if profile and profile.is_on_duty and profile.current_latitude is not None and profile.current_longitude is not None:
+                    if profile.last_location_updated_at and (timezone.now() - profile.last_location_updated_at).total_seconds() < 150:
+                        is_fresh = True
+
                 return {
                     'id': boy.id,
                     'name': name,
                     'phone': display_phone,
                     'employee_id': getattr(boy, 'employee_id', None),
                     'status': obj.delivery_details.status,
-                    'latitude': profile.current_latitude if (profile and is_privileged) else None,
-                    'longitude': profile.current_longitude if (profile and is_privileged) else None,
+                    'latitude': profile.current_latitude if (profile and is_privileged and is_fresh) else None,
+                    'longitude': profile.current_longitude if (profile and is_privileged and is_fresh) else None,
+                    'is_gps_active': is_fresh,
                 }
         except Exception:
             pass
