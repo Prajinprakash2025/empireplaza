@@ -29,6 +29,12 @@ class SiteSettingRetrieveUpdateView(generics.RetrieveUpdateAPIView):
         # Only Admin can update settings
         return [IsAdminRole()]
 
+    def get_throttles(self):
+        # Public GET requests for site settings should never be throttled
+        if self.request.method == 'GET':
+            return []
+        return super().get_throttles()
+
     def get_object(self):
         # Get the single settings object
         obj, created = SiteSetting.objects.get_or_create(pk=1)
