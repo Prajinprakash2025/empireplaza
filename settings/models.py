@@ -82,6 +82,10 @@ class SiteSetting(models.Model):
         max_length=255, blank=True, null=True, default="Midnight feast on selected items",
         help_text="Short description displayed on the offer card"
     )
+    offer_banner_image = models.ImageField(
+        upload_to='offer_banners/', blank=True, null=True,
+        help_text="Custom banner poster image for homepage offer card"
+    )
     is_offer_card_active = models.BooleanField(
         default=True,
         help_text="Turn ON or OFF to show or hide the Exclusive Offers card on customer homepage."

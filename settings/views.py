@@ -3,6 +3,7 @@ from django.core.cache import cache
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from .models import SiteSetting
 from .serializers import SiteSettingSerializer
@@ -14,6 +15,7 @@ CACHE_TIMEOUT_SECONDS = 30
 
 class SiteSettingRetrieveUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = SiteSettingSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_authenticators(self):
         # Anyone can view settings without requiring valid JWT cookies

@@ -2,6 +2,22 @@ from rest_framework import serializers
 from .models import SiteSetting
 
 
+def resolve_media_url(request, image_field):
+    if not image_field:
+        return None
+    try:
+        url = image_field.url
+    except Exception:
+        return None
+    if url.startswith('http://') or url.startswith('https://'):
+        return url
+    if request:
+        return request.build_absolute_uri(url)
+    from django.conf import settings
+    base_url = getattr(settings, 'PUBLIC_MEDIA_URL', 'https://grandeplaza.com').rstrip('/')
+    return f"{base_url}{url}"
+
+
 class SiteSettingSerializer(serializers.ModelSerializer):
 
     # Frontend variables -> Backend fields (Support both camelCase and snake_case)
@@ -228,6 +244,16 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         allow_null=True
     )
 
+    offer_banner_image = serializers.ImageField(
+        required=False,
+        allow_null=True
+    )
+    offerBannerImage = serializers.ImageField(
+        source='offer_banner_image',
+        required=False,
+        allow_null=True
+    )
+
     isOfferCardActive = serializers.BooleanField(
         source='is_offer_card_active',
         required=False
@@ -312,6 +338,8 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             'offerTitle',
             'offer_subtitle',
             'offerSubtitle',
+            'offer_banner_image',
+            'offerBannerImage',
             'is_offer_card_active',
             'isOfferCardActive',
         ]
@@ -398,6 +426,15 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         data['offerTitle'] = str(instance.offer_title or "Up to 40% OFF")
         data['offer_subtitle'] = str(instance.offer_subtitle or "Midnight feast on selected items")
         data['offerSubtitle'] = str(instance.offer_subtitle or "Midnight feast on selected items")
+
+        offer_img = (
+            resolve_media_url(self.context.get('request'), instance.offer_banner_image)
+            if instance.offer_banner_image
+            else None
+        )
+        data['offer_banner_image'] = offer_img
+        data['offerBannerImage'] = offer_img
+
         data['is_offer_card_active'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)
         data['isOfferCardActive'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)
 
@@ -483,6 +520,11 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             instance.offer_subtitle = validated_data.pop('offer_subtitle')
         elif 'offerSubtitle' in validated_data:
             instance.offer_subtitle = validated_data.pop('offerSubtitle')
+
+        if 'offer_banner_image' in validated_data:
+            instance.offer_banner_image = validated_data.pop('offer_banner_image')
+        elif 'offerBannerImage' in validated_data:
+            instance.offer_banner_image = validated_data.pop('offerBannerImage')
 
         if 'is_offer_card_active' in validated_data:
             instance.is_offer_card_active = validated_data.pop('is_offer_card_active')
