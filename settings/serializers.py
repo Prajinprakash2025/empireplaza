@@ -20,6 +20,7 @@ def resolve_media_url(request, image_field):
 
 class OfferBannerSerializer(serializers.ModelSerializer):
     imageUrl = serializers.SerializerMethodField()
+    hideTextOverlay = serializers.BooleanField(source='hide_text_overlay', required=False)
 
     class Meta:
         model = OfferBanner
@@ -30,6 +31,8 @@ class OfferBannerSerializer(serializers.ModelSerializer):
             'badge_text',
             'image',
             'imageUrl',
+            'hide_text_overlay',
+            'hideTextOverlay',
             'is_active',
             'created_at',
             'updated_at',
@@ -45,6 +48,8 @@ class OfferBannerSerializer(serializers.ModelSerializer):
         data['image'] = url
         data['imageUrl'] = url
         data['badgeText'] = instance.badge_text
+        data['hide_text_overlay'] = bool(instance.hide_text_overlay)
+        data['hideTextOverlay'] = bool(instance.hide_text_overlay)
         data['isActive'] = instance.is_active
         data['createdAt'] = instance.created_at
         data['updatedAt'] = instance.updated_at
@@ -456,12 +461,12 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         # If an OfferBanner is activated in the Offer Library, use it!
         active_banner = OfferBanner.objects.filter(is_active=True).first()
         if active_banner:
-            data['offer_badge_text'] = str(active_banner.badge_text or "Late Night Special")
-            data['offerBadgeText'] = str(active_banner.badge_text or "Late Night Special")
-            data['offer_title'] = str(active_banner.title or "Up to 40% OFF")
-            data['offerTitle'] = str(active_banner.title or "Up to 40% OFF")
-            data['offer_subtitle'] = str(active_banner.subtitle or "Midnight feast on selected items")
-            data['offerSubtitle'] = str(active_banner.subtitle or "Midnight feast on selected items")
+            data['offer_badge_text'] = str(active_banner.badge_text or "")
+            data['offerBadgeText'] = str(active_banner.badge_text or "")
+            data['offer_title'] = str(active_banner.title or "")
+            data['offerTitle'] = str(active_banner.title or "")
+            data['offer_subtitle'] = str(active_banner.subtitle or "")
+            data['offerSubtitle'] = str(active_banner.subtitle or "")
             banner_img = (
                 resolve_media_url(self.context.get('request'), active_banner.image)
                 if active_banner.image
@@ -469,6 +474,12 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             )
             data['offer_banner_image'] = banner_img
             data['offerBannerImage'] = banner_img
+            is_hidden = bool(
+                active_banner.hide_text_overlay
+                or not (active_banner.title or active_banner.badge_text or active_banner.subtitle)
+            )
+            data['hide_text_overlay'] = is_hidden
+            data['hideTextOverlay'] = is_hidden
         else:
             data['offer_badge_text'] = str(instance.offer_badge_text or "Late Night Special")
             data['offerBadgeText'] = str(instance.offer_badge_text or "Late Night Special")
@@ -484,6 +495,8 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             )
             data['offer_banner_image'] = offer_img
             data['offerBannerImage'] = offer_img
+            data['hide_text_overlay'] = False
+            data['hideTextOverlay'] = False
 
         data['is_offer_card_active'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)
         data['isOfferCardActive'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)

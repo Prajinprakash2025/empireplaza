@@ -137,10 +137,14 @@ class SiteSetting(models.Model):
 
 
 class OfferBanner(models.Model):
-    title = models.CharField(max_length=200, default="Up to 40% OFF")
-    subtitle = models.CharField(max_length=255, blank=True, default="Midnight feast on selected items")
-    badge_text = models.CharField(max_length=100, blank=True, default="Late Night Special")
+    title = models.CharField(max_length=200, blank=True, null=True, default="")
+    subtitle = models.CharField(max_length=255, blank=True, null=True, default="")
+    badge_text = models.CharField(max_length=100, blank=True, null=True, default="")
     image = models.ImageField(upload_to='offer_banners/')
+    hide_text_overlay = models.BooleanField(
+        default=False,
+        help_text="If True, hides HTML text and dark gradient overlay so only the graphic poster image is visible."
+    )
     is_active = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
