@@ -122,18 +122,39 @@ class CartItemDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_cart_item(self, request, pk):
-        return get_object_or_404(
+        # First try finding by CartItem.pk
+        item = (
             CartItem.objects.select_related(
                 'cart',
                 'menu_item',
                 'variant',
-            ),
-            pk=pk,
-            cart__user=request.user,
+            )
+            .filter(pk=pk, cart__user=request.user)
+            .first()
         )
+        if not item:
+            # Fallback: check if client passed menu_item_id as pk
+            item = (
+                CartItem.objects.select_related(
+                    'cart',
+                    'menu_item',
+                    'variant',
+                )
+                .filter(menu_item_id=pk, cart__user=request.user)
+                .first()
+            )
+        return item
 
     def patch(self, request, pk):
         cart_item = self.get_cart_item(request, pk)
+        if not cart_item:
+            return Response(
+                {
+                    'status': False,
+                    'message': 'Cart item not found.',
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         serializer = CartItemQuantitySerializer(
             cart_item,
@@ -155,11 +176,12 @@ class CartItemDetailView(APIView):
 
     def delete(self, request, pk):
         cart_item = self.get_cart_item(request, pk)
-        cart = cart_item.cart
+        if cart_item:
+            cart = cart_item.cart
+            cart_item.delete()
+            cart.save(update_fields=['updated_at'])
 
-        cart_item.delete()
-        cart.save(update_fields=['updated_at'])
-
+        # Idempotent removal: if already deleted or not in DB, succeed cleanly
         return Response({
             'status': True,
             'message': 'Item removed from cart successfully.',
