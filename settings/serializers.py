@@ -192,6 +192,50 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         required=False
     )
 
+    offerBadgeText = serializers.CharField(
+        source='offer_badge_text',
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+    offer_badge_text = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+
+    offerTitle = serializers.CharField(
+        source='offer_title',
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+    offer_title = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+
+    offerSubtitle = serializers.CharField(
+        source='offer_subtitle',
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+    offer_subtitle = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+
+    isOfferCardActive = serializers.BooleanField(
+        source='is_offer_card_active',
+        required=False
+    )
+    is_offer_card_active = serializers.BooleanField(
+        required=False
+    )
+
     isOpen = serializers.BooleanField(
         source='is_open',
         read_only=True
@@ -262,6 +306,14 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             'is_open',
             'isCodEnabled',
             'is_cod_enabled',
+            'offer_badge_text',
+            'offerBadgeText',
+            'offer_title',
+            'offerTitle',
+            'offer_subtitle',
+            'offerSubtitle',
+            'is_offer_card_active',
+            'isOfferCardActive',
         ]
 
     # Backend data -> Frontend React format
@@ -340,6 +392,15 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         data['is_cod_enabled'] = is_cod_val
         data['isCodEnabled'] = is_cod_val
 
+        data['offer_badge_text'] = str(instance.offer_badge_text or "Late Night Special")
+        data['offerBadgeText'] = str(instance.offer_badge_text or "Late Night Special")
+        data['offer_title'] = str(instance.offer_title or "Up to 40% OFF")
+        data['offerTitle'] = str(instance.offer_title or "Up to 40% OFF")
+        data['offer_subtitle'] = str(instance.offer_subtitle or "Midnight feast on selected items")
+        data['offerSubtitle'] = str(instance.offer_subtitle or "Midnight feast on selected items")
+        data['is_offer_card_active'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)
+        data['isOfferCardActive'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)
+
         data['opening_time'] = op_time
         data['openingTime'] = op_time
 
@@ -406,6 +467,27 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             instance.is_cod_enabled = validated_data.pop('is_cod_enabled')
         elif 'isCodEnabled' in validated_data:
             instance.is_cod_enabled = validated_data.pop('isCodEnabled')
+
+        # Handle Offer Banner
+        if 'offer_badge_text' in validated_data:
+            instance.offer_badge_text = validated_data.pop('offer_badge_text')
+        elif 'offerBadgeText' in validated_data:
+            instance.offer_badge_text = validated_data.pop('offerBadgeText')
+
+        if 'offer_title' in validated_data:
+            instance.offer_title = validated_data.pop('offer_title')
+        elif 'offerTitle' in validated_data:
+            instance.offer_title = validated_data.pop('offerTitle')
+
+        if 'offer_subtitle' in validated_data:
+            instance.offer_subtitle = validated_data.pop('offer_subtitle')
+        elif 'offerSubtitle' in validated_data:
+            instance.offer_subtitle = validated_data.pop('offerSubtitle')
+
+        if 'is_offer_card_active' in validated_data:
+            instance.is_offer_card_active = validated_data.pop('is_offer_card_active')
+        elif 'isOfferCardActive' in validated_data:
+            instance.is_offer_card_active = validated_data.pop('isOfferCardActive')
 
         # Handle restaurant name / appName
         if 'restaurant_name' in validated_data:

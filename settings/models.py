@@ -69,6 +69,24 @@ class SiteSetting(models.Model):
         help_text="Allow customers to place Cash on Delivery (COD) orders."
     )
 
+    # Homepage Promotional Offer Banner Control
+    offer_badge_text = models.CharField(
+        max_length=100, blank=True, null=True, default="Late Night Special",
+        help_text="e.g. 'Late Night Special' or 'Weekend Deal'"
+    )
+    offer_title = models.CharField(
+        max_length=200, blank=True, null=True, default="Up to 40% OFF",
+        help_text="e.g. 'Up to 40% OFF' or 'Flat ₹100 OFF'"
+    )
+    offer_subtitle = models.CharField(
+        max_length=255, blank=True, null=True, default="Midnight feast on selected items",
+        help_text="Short description displayed on the offer card"
+    )
+    is_offer_card_active = models.BooleanField(
+        default=True,
+        help_text="Turn ON or OFF to show or hide the Exclusive Offers card on customer homepage."
+    )
+
     # Social Media
     instagram_url = models.URLField(
         max_length=500, blank=True, null=True, default=""
