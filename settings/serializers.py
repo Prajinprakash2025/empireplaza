@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import SiteSetting
+from .models import SiteSetting, OfferBanner
 
 
 def resolve_media_url(request, image_field):
@@ -16,6 +16,39 @@ def resolve_media_url(request, image_field):
     from django.conf import settings
     base_url = getattr(settings, 'PUBLIC_MEDIA_URL', 'https://grandeplaza.com').rstrip('/')
     return f"{base_url}{url}"
+
+
+class OfferBannerSerializer(serializers.ModelSerializer):
+    imageUrl = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OfferBanner
+        fields = [
+            'id',
+            'title',
+            'subtitle',
+            'badge_text',
+            'image',
+            'imageUrl',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_imageUrl(self, obj):
+        return resolve_media_url(self.context.get('request'), obj.image)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        url = self.get_imageUrl(instance)
+        data['image'] = url
+        data['imageUrl'] = url
+        data['badgeText'] = instance.badge_text
+        data['isActive'] = instance.is_active
+        data['createdAt'] = instance.created_at
+        data['updatedAt'] = instance.updated_at
+        return data
 
 
 class SiteSettingSerializer(serializers.ModelSerializer):
@@ -420,20 +453,37 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         data['is_cod_enabled'] = is_cod_val
         data['isCodEnabled'] = is_cod_val
 
-        data['offer_badge_text'] = str(instance.offer_badge_text or "Late Night Special")
-        data['offerBadgeText'] = str(instance.offer_badge_text or "Late Night Special")
-        data['offer_title'] = str(instance.offer_title or "Up to 40% OFF")
-        data['offerTitle'] = str(instance.offer_title or "Up to 40% OFF")
-        data['offer_subtitle'] = str(instance.offer_subtitle or "Midnight feast on selected items")
-        data['offerSubtitle'] = str(instance.offer_subtitle or "Midnight feast on selected items")
+        # If an OfferBanner is activated in the Offer Library, use it!
+        active_banner = OfferBanner.objects.filter(is_active=True).first()
+        if active_banner:
+            data['offer_badge_text'] = str(active_banner.badge_text or "Late Night Special")
+            data['offerBadgeText'] = str(active_banner.badge_text or "Late Night Special")
+            data['offer_title'] = str(active_banner.title or "Up to 40% OFF")
+            data['offerTitle'] = str(active_banner.title or "Up to 40% OFF")
+            data['offer_subtitle'] = str(active_banner.subtitle or "Midnight feast on selected items")
+            data['offerSubtitle'] = str(active_banner.subtitle or "Midnight feast on selected items")
+            banner_img = (
+                resolve_media_url(self.context.get('request'), active_banner.image)
+                if active_banner.image
+                else None
+            )
+            data['offer_banner_image'] = banner_img
+            data['offerBannerImage'] = banner_img
+        else:
+            data['offer_badge_text'] = str(instance.offer_badge_text or "Late Night Special")
+            data['offerBadgeText'] = str(instance.offer_badge_text or "Late Night Special")
+            data['offer_title'] = str(instance.offer_title or "Up to 40% OFF")
+            data['offerTitle'] = str(instance.offer_title or "Up to 40% OFF")
+            data['offer_subtitle'] = str(instance.offer_subtitle or "Midnight feast on selected items")
+            data['offerSubtitle'] = str(instance.offer_subtitle or "Midnight feast on selected items")
 
-        offer_img = (
-            resolve_media_url(self.context.get('request'), instance.offer_banner_image)
-            if instance.offer_banner_image
-            else None
-        )
-        data['offer_banner_image'] = offer_img
-        data['offerBannerImage'] = offer_img
+            offer_img = (
+                resolve_media_url(self.context.get('request'), instance.offer_banner_image)
+                if instance.offer_banner_image
+                else None
+            )
+            data['offer_banner_image'] = offer_img
+            data['offerBannerImage'] = offer_img
 
         data['is_offer_card_active'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)
         data['isOfferCardActive'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)

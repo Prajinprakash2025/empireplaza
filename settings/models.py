@@ -134,3 +134,21 @@ class SiteSetting(models.Model):
 
     def __str__(self):
         return "Website Settings"
+
+
+class OfferBanner(models.Model):
+    title = models.CharField(max_length=200, default="Up to 40% OFF")
+    subtitle = models.CharField(max_length=255, blank=True, default="Midnight feast on selected items")
+    badge_text = models.CharField(max_length=100, blank=True, default="Late Night Special")
+    image = models.ImageField(upload_to='offer_banners/')
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Offer Banner"
+        verbose_name_plural = "Offer Banners"
+
+    def __str__(self):
+        return f"{self.title} ({'ACTIVE' if self.is_active else 'INACTIVE'})"
