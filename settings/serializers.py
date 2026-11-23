@@ -300,6 +300,26 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         required=False
     )
 
+    celebrationMode = serializers.BooleanField(
+        source='celebration_mode',
+        required=False
+    )
+    celebration_mode = serializers.BooleanField(
+        required=False
+    )
+
+    celebrationTheme = serializers.CharField(
+        source='celebration_theme',
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+    celebration_theme = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+
     isOpen = serializers.BooleanField(
         source='is_open',
         read_only=True
@@ -380,6 +400,10 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             'offerBannerImage',
             'is_offer_card_active',
             'isOfferCardActive',
+            'celebration_mode',
+            'celebrationMode',
+            'celebration_theme',
+            'celebrationTheme',
         ]
 
     # Backend data -> Frontend React format
@@ -501,6 +525,11 @@ class SiteSettingSerializer(serializers.ModelSerializer):
         data['is_offer_card_active'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)
         data['isOfferCardActive'] = bool(instance.is_offer_card_active if instance.is_offer_card_active is not None else True)
 
+        data['celebration_mode'] = bool(instance.celebration_mode)
+        data['celebrationMode'] = bool(instance.celebration_mode)
+        data['celebration_theme'] = str(instance.celebration_theme or "christmas")
+        data['celebrationTheme'] = str(instance.celebration_theme or "christmas")
+
         data['opening_time'] = op_time
         data['openingTime'] = op_time
 
@@ -593,6 +622,17 @@ class SiteSettingSerializer(serializers.ModelSerializer):
             instance.is_offer_card_active = validated_data.pop('is_offer_card_active')
         elif 'isOfferCardActive' in validated_data:
             instance.is_offer_card_active = validated_data.pop('isOfferCardActive')
+
+        # Handle Celebration Mode
+        if 'celebration_mode' in validated_data:
+            instance.celebration_mode = validated_data.pop('celebration_mode')
+        elif 'celebrationMode' in validated_data:
+            instance.celebration_mode = validated_data.pop('celebrationMode')
+
+        if 'celebration_theme' in validated_data:
+            instance.celebration_theme = validated_data.pop('celebration_theme')
+        elif 'celebrationTheme' in validated_data:
+            instance.celebration_theme = validated_data.pop('celebrationTheme')
 
         # Handle restaurant name / appName
         if 'restaurant_name' in validated_data:

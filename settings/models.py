@@ -69,6 +69,24 @@ class SiteSetting(models.Model):
         help_text="Allow customers to place Cash on Delivery (COD) orders."
     )
 
+    # Festive Celebration Mode Control
+    celebration_mode = models.BooleanField(
+        default=False,
+        help_text="Enable or disable festive celebration mode (fairy lights, snowfall, festive accents)."
+    )
+    celebration_theme = models.CharField(
+        max_length=50,
+        default="christmas",
+        choices=[
+            ("christmas", "Christmas & New Year"),
+            ("onam", "Onam"),
+            ("vishu", "Vishu"),
+            ("eid", "Eid Mubarak"),
+            ("diwali", "Diwali"),
+        ],
+        help_text="Active festival theme"
+    )
+
     # Homepage Promotional Offer Banner Control
     offer_badge_text = models.CharField(
         max_length=100, blank=True, null=True, default="Late Night Special",
